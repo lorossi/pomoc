@@ -635,6 +635,7 @@ void *show_routine(void *args)
     sprintf(buffer, "total study sessions: %i", p->study_phases);
     windowAddLine(p->w_total, buffer);
 
+    // second line of w_total
     format_elapsed_time(p->study_elapsed, num_buffer);
     sprintf(buffer, "total time studied: %s", num_buffer);
     windowAddLine(p->w_total, buffer);
@@ -653,32 +654,37 @@ void *show_routine(void *args)
 
     if (p->windows_force_reload)
     {
+      // get largest window
+      int largest, terminal_width, dx;
+      largest = windowGetSize(p->w_phase).width + windowGetSize(p->w_total).width + 1;
+      // now get terminal width
+      terminal_width = get_terminal_size().width;
+      // now calculate displacement
+      dx = (terminal_width - largest) / 2;
+
+      // set position of w_phase
+      windowSetPosition(p->w_phase, dx, Y_BORDER);
       // set position of w_total
-      windowAutoResize(p->w_phase); // trigger resize to get the actual width
-      Position phase_br_corner = windowGetBottomRight(p->w_phase);
-      windowSetPosition(p->w_total, phase_br_corner.x + 1, Y_BORDER);
-
-      // set position of w_quote
+      windowSetPosition(p->w_total, windowGetBottomRight(p->w_phase).x + 1, Y_BORDER);
       windowAutoResize(p->w_total); // trigger resize to get the actual width
+
       Position total_br_corner = windowGetBottomRight(p->w_total);
-      windowSetPosition(p->w_quote, X_BORDER, total_br_corner.y);
-      windowSetSize(p->w_quote, total_br_corner.x - X_BORDER, 4);
-      // needs to be shown only once
-      windowShow(p->w_quote);
-
-      // set position of w_info
+      // set position of w_quote
+      windowSetPosition(p->w_quote, dx, total_br_corner.y);
+      windowSetSize(p->w_quote, total_br_corner.x - dx, 4);
       windowAutoResize(p->w_quote); // trigger resize to get the actual width
-      Position quotes_br_corner = windowGetBottomRight(p->w_quote);
-      windowSetPosition(p->w_info, X_BORDER, quotes_br_corner.y);
-      windowSetWidth(p->w_info, windowGetSize(p->w_quote).width);
 
-      // set position of w_status
+      Position quotes_br_corner = windowGetBottomRight(p->w_quote);
+      // set position of w_info
+      windowSetPosition(p->w_info, dx, quotes_br_corner.y);
+      windowSetWidth(p->w_info, total_br_corner.x - dx);
       windowAutoResize(p->w_info); // trigger resize to get the actual width
+
       Position info_br_corner = windowGetBottomRight(p->w_info);
-      windowSetPosition(p->w_status, X_BORDER, info_br_corner.y);
-      windowSetWidth(p->w_status, windowGetSize(p->w_quote).width);
+      // set position of w_status
+      windowSetPosition(p->w_status, dx, info_br_corner.y);
+      windowSetWidth(p->w_status, total_br_corner.x - dx);
       windowSetVisibility(p->w_status, p->time_paused);
-      windowAutoResize(p->w_status);
 
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
@@ -698,6 +704,7 @@ void *show_routine(void *args)
       windowShow(p->w_quote);
       windowShow(p->w_info);
       windowShow(p->w_status);
+
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
@@ -815,6 +822,7 @@ void *keypress_routine(void *args)
       d = createDialog(X_BORDER, Y_BORDER);
       dialogSetPadding(d, 4);
       dialogSetText(d, "Exit pomodoro?", 1);
+      dialogCenter(d, 1, 0);
       dialogShow(d);
       ret = dialogWaitResponse(d);
       dialogClear(d);
@@ -838,6 +846,7 @@ void *keypress_routine(void *args)
     }
     else if (sigwinch_called)
     {
+      // terminal has been resized
       sigwinch_called = 0;
       p->windows_force_reload = 1;
     }
@@ -886,6 +895,7 @@ void *keypress_routine(void *args)
       dialogSetPadding(d, 4);
       dialogSetText(d, "Do you want to skip the current session?", 1);
       dialogSetButtons(d, "YES", "NO");
+      dialogCenter(d, 1, 0);
       dialogShow(d);
       ret = dialogWaitResponse(d);
       dialogClear(d);
@@ -989,6 +999,7 @@ int main()
     d = createDialog(X_BORDER, Y_BORDER);
     dialogSetPadding(d, 4);
     dialogSetText(d, "Previous session found. Continue?", 1);
+    dialogCenter(d, 1, 0);
     dialogShow(d);
     ret = dialogWaitResponse(d);
     dialogClear(d);
@@ -1022,7 +1033,7 @@ int main()
   // Main thread IDLE
   while (p->show_r || p->advance_r || p->save_r || p->keypress_r)
   {
-    msec_sleep(SLEEP_INTERVAL);
+    msec_sleep(SLEEP_INTERVAL / 4);
   }
 
   // clean up

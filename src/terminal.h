@@ -158,23 +158,22 @@ typedef struct
  */
 typedef struct
 {
+  int active_button;  /**<  index of the currently selected button */
+  int center_x;       /**< center along the x axis of the terminal */
+  int center_y;       /**< center along the y axis of the terminal */
   Window *window;     /**<  main window  */
   Window *buttons[2]; /**<  buttons, stored as window */
-  int active_button;  /**<  index of the currently selected button */
 } Dialog;
 
-// struct creation
 Rectangle createRectangle(int w, int h);
 Position createPosition(int x, int y);
 RGB createRGBcolor(int R, int G, int B);
 HSL createHSLcolor(int H, int S, int L);
 
-// color conversion
 RGB HSLtoRGB(HSL color);
 RGB HUEtoRGB(double hue);
 HSL RGBtoHSL(RGB color);
 
-// terminal manipulation
 Rectangle get_terminal_size();
 void clear_terminal();
 void hide_cursor();
@@ -203,7 +202,6 @@ int await_keypress(char *s);
 int await_enter(char *s);
 void terminal_beep();
 
-// window manipulation
 Window *createWindow(int x, int y);
 void deleteWindow(Window *w);
 void windowSetSize(Window *w, int width, int height);
@@ -212,6 +210,7 @@ void windowSetHeight(Window *w, int height);
 void windowSetVisibility(Window *w, int visibility);
 Rectangle windowGetSize(Window *w);
 void windowSetPosition(Window *w, int x, int y);
+void windowMoveBy(Window *w, int dx, int dy);
 Position windowGetPosition(Window *w);
 Position windowGetBottomRight(Window *w);
 void windowSetPadding(Window *w, int padding);
@@ -232,9 +231,9 @@ int windowDeleteAllLines(Window *w);
 void windowShow(Window *w);
 void windowClear(Window *w);
 
-// dialog manipulation
 Dialog *createDialog(int x, int y);
 void deleteDialog(Dialog *d);
+void dialogCenter(Dialog *d, int center_x, int center_y);
 void dialogShow(Dialog *d);
 void dialogClear(Dialog *d);
 void dialogSetButtons(Dialog *d, char *yes, char *no);

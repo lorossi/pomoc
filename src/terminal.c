@@ -802,7 +802,7 @@ void move_cursor_to_bottom()
 
 /**
  * @brief Returns the current size of the terminal as a rectangle. 
- * If it's not available, returns -1.
+ * If it's not available, returns a rectangle with -1 as both dimensions.
  * 
  * @return Rectangle 
  */
@@ -1238,13 +1238,34 @@ Rectangle windowGetSize(Window *w)
  * @brief Sets position of a window, relative to top left corner.
  * 
  * @param w pointer to window
- * @param x x coordinate
- * @param y y coordinate
+ * @param x x coordinate (-1 to keep the same coordinate)
+ * @param y y coordinate (-1 to keep the same coordinate)
  */
 void windowSetPosition(Window *w, int x, int y)
 {
-  w->position = createPosition(x, y);
+  const Position old_position = windowGetPosition(w);
+  Position new_position = (Position){.x = x, .y = y};
+
+  if (x == -1)
+    new_position.x = old_position.x;
+  if (y == -1)
+    new_position.y = old_position.y;
+
+  w->position = createPosition(new_position.x, new_position.y);
   return;
+}
+
+/**
+ * @brief Move window by a set amount of characters
+ * 
+ * @param w pointer to window
+ * @param dx displacement along x axis
+ * @param dy displacement along y axis
+ */
+void windowMoveBy(Window *w, int dx, int dy)
+{
+  w->position.x += dx;
+  w->position.y += dy;
 }
 
 /**
@@ -1373,6 +1394,7 @@ void windowAutoResize(Window *w)
 
   if (w->auto_height)
   {
+    _windowLinesWrap(w);
     _windowAutoHeight(w);
   }
 }
@@ -1611,9 +1633,11 @@ Dialog *createDialog(int x, int y)
   Dialog *d = malloc(sizeof(Window));
   // pack struct
   *d = (Dialog){
+      .active_button = 0,
+      .center_x = 0,
+      .center_y = 0,
       .window = w,
       .buttons = {b1, b2},
-      .active_button = 0,
   };
 
   return d;
@@ -1635,12 +1659,69 @@ void deleteDialog(Dialog *d)
 }
 
 /**
+ * @brief Centers a dialog window in the terminal
+ * 
+ * @param d Pointer to dialog
+ * @param center_x 1 to align on the x axis, 0 to leave as it is
+ * @param center_y 1 to align on the y axis, 0 to leave as it is
+ */
+void dialogCenter(Dialog *d, int center_x, int center_y)
+{
+  if (center_x != 0 && center_x != 1)
+    return;
+  if (center_y != 0 && center_y != 1)
+    return;
+
+  d->center_x = center_x;
+  d->center_y = center_y;
+}
+
+/**
  * @brief Shows a dialog window
  * 
  * @param d pointer to dialog window
  */
 void dialogShow(Dialog *d)
 {
+
+  if (d->center_x || d->center_y)
+  {
+    // get current dialog position
+    Position dialog_position = windowGetPosition(d->window);
+    // get size of the terminal
+    Rectangle terminal_size = get_terminal_size();
+    // get size of dialog window
+    Rectangle dialog_size = windowGetSize(d->window);
+
+    if (terminal_size.height != -1 || terminal_size.width != -1)
+    {
+      // calculate x and y variation in position
+      if (d->center_x)
+      {
+        int dx;
+        // calculate horizontal displacement
+        dx = (terminal_size.width - dialog_size.width) / 2 - dialog_position.x;
+        // set position for main window
+        d->window->position.x += dx;
+        // set position for buttons
+        for (int i = 0; i < 2; i++)
+          d->buttons[i]->position.x += dx;
+      }
+
+      if (d->center_y)
+      {
+        int dy;
+        // calculate vertical displacement
+        dy = (terminal_size.height - dialog_size.height) / 2 - dialog_position.y;
+        // set position for main window
+        d->window->position.y += dy;
+        // set position for buttons
+        for (int i = 0; i < 2; i++)
+          d->buttons[i]->position.y += dy;
+      }
+    }
+  }
+
   windowShow(d->window);
 
   for (int i = 0; i < 2; i++)
@@ -1673,16 +1754,26 @@ void dialogClear(Dialog *d)
 void dialogSetButtons(Dialog *d, char *yes, char *no)
 {
   char buffer[MAX_WIDTH];
-
+  // clear old lines
   windowDeleteAllLines(d->buttons[0]);
   windowDeleteAllLines(d->buttons[1]);
-
+  // add new lines
   _stringCopy(buffer, yes);
   _stringPad(buffer, buffer, 2);
   windowAddLine(d->buttons[0], buffer);
   _stringCopy(buffer, no);
   _stringPad(buffer, buffer, 2);
   windowAddLine(d->buttons[1], buffer);
+  // trigger resize
+  windowAutoResize(d->buttons[1]);
+  // get bottom right of the window
+  const Position bottom_right = windowGetBottomRight(d->window);
+  // move right button
+  const Rectangle button_width = windowGetSize(d->buttons[1]);
+  // calculate x coordinate of the button
+  const int x = bottom_right.x - 4 - button_width.width;
+  // set x coord of the button
+  windowSetPosition(d->buttons[1], x, -1);
 }
 
 /**
