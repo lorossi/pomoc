@@ -13,17 +13,17 @@
 /* Structs declaration */
 typedef struct phase
 {
-  char *name;
-  int id;
-  int duration;
-  int repetitions;
-  int completed;
-  int is_study;
-  clock_t started;
-  style fg_color;
-  style bg_color;
-  struct phase *next;
-  struct phase *next_after;
+  char *name;               // name of the phase
+  int id;                   // id of the phase
+  int duration;             // duration of the phase
+  int repetitions;          // number of repetitions of the phase
+  int completed;            // number of time the phase has been completed
+  int is_study;             // is this a phase where I should study?
+  clock_t started;          // when the phase started
+  style fg_color;           // text color of the phase window
+  style bg_color;           // background color of the phase window
+  struct phase *next;       // pointer to next phase
+  struct phase *next_after; // pointer to phase when the repetitions have ended
 } Phase;
 
 typedef struct
@@ -54,12 +54,11 @@ const int STUDYDURATION = 45;      // duration of the study phase, minutes
 const int SHORTBREAKDURATION = 15; // duration of the short break, minutes
 const int LONGBREAKDURATION = 20;  // duration of the long break, minutes
 const int STUDYSESSIONS = 4;       // number of study sessions before long break
-const int X_BORDER = 2;
-const int Y_BORDER = 1;
-const int PADDING = 2;
-const int BUFLEN = 250;         // length of the buffers
-const int SAVEINTERVAL = 1000;  // interval between saves, msec
-const int SLEEP_INTERVAL = 100; // threads sleep time, msec
+const int Y_BORDER = 1;            // Y border window positioning
+const int PADDING = 2;             // window text padding
+const int BUFLEN = 250;            // length of the buffers
+const int SAVEINTERVAL = 1000;     // interval between saves, msec
+const int SLEEP_INTERVAL = 100;    // threads sleep time, msec
 
 #define QUOTES_PATH ".QUOTES"
 #define SAVE_PATH ".SAVE"
@@ -218,14 +217,14 @@ void init_pomodoro(Phase phases[3])
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_info, Window *w_status)
 {
   Parameters *p = malloc(sizeof(Parameters));
-
+  // create mutex
   p->terminal_lock = malloc(sizeof(*(p->terminal_lock)));
   pthread_mutex_init(p->terminal_lock, NULL);
-
+  // create tone
   p->tone = malloc(sizeof(*(p->tone)));
   p->tone->repetitions = 0;
   p->tone->speed = 0;
-
+  // init all parameters
   p->current_phase = current_phase;
   p->study_phases = 0;
   p->study_elapsed = 0;
@@ -318,19 +317,15 @@ void next_phase(Parameters *p)
 void format_elapsed_time(int elapsed, char *buffer)
 {
   int seconds, minutes, hours;
-
   hours = elapsed / 3600;
   minutes = (elapsed % 3600) / 60;
   seconds = elapsed % 60;
 
   if (hours > 0)
-  {
     sprintf(buffer, "%02d:%02d:%02d", hours, minutes, seconds);
-  }
   else
-  {
     sprintf(buffer, "%02d:%02d", minutes, seconds);
-  }
+
   return;
 }
 
@@ -744,7 +739,7 @@ void *advance_routine(void *args)
         total_elapsed = phase_elapsed;
         // next phase is a study phase, set tone accordingly
         p->tone->speed = 3;
-        p->tone->repetitions = 4;
+        p->tone->repetitions = 3;
       }
       else
       {
@@ -819,7 +814,7 @@ void *keypress_routine(void *args)
       Dialog *d;
       int ret;
 
-      d = createDialog(X_BORDER, Y_BORDER);
+      d = createDialog(0, Y_BORDER);
       dialogSetPadding(d, 4);
       dialogSetText(d, "Exit pomodoro?", 1);
       dialogCenter(d, 1, 0);
@@ -891,7 +886,7 @@ void *keypress_routine(void *args)
       Dialog *d;
       int ret;
 
-      d = createDialog(X_BORDER, Y_BORDER);
+      d = createDialog(0, Y_BORDER);
       dialogSetPadding(d, 4);
       dialogSetText(d, "Do you want to skip the current session?", 1);
       dialogSetButtons(d, "YES", "NO");
@@ -950,7 +945,7 @@ int main()
   current_phase = set_initial_phase(phases);
 
   // w_phase keeping track of current phase
-  w_phase = createWindow(X_BORDER, Y_BORDER);
+  w_phase = createWindow(0, Y_BORDER);
   windowSetAlignment(w_phase, 0);
   windowSetPadding(w_phase, PADDING);
   windowSetFGcolor(w_phase, fg_RED);
@@ -960,7 +955,7 @@ int main()
   windowSetPadding(w_total, PADDING);
   windowSetFGcolor(w_total, fg_BRIGHT_YELLOW);
   // w_quote with... a quote
-  w_quote = createWindow(X_BORDER, Y_BORDER);
+  w_quote = createWindow(0, Y_BORDER);
   windowSetAlignment(w_quote, 0);
   windowSetPadding(w_quote, PADDING);
   windowSetAutoWidth(w_quote, 0);
@@ -996,7 +991,7 @@ int main()
     Dialog *d;
     int ret;
 
-    d = createDialog(X_BORDER, Y_BORDER);
+    d = createDialog(0, Y_BORDER);
     dialogSetPadding(d, 4);
     dialogSetText(d, "Previous session found. Continue?", 1);
     dialogCenter(d, 1, 0);
