@@ -675,9 +675,8 @@ void *show_routine(void *args)
       windowSetWidth(p->w_info, total_br_corner.x - dx);
       windowAutoResize(p->w_info); // trigger resize to get the actual width
 
-      Position info_br_corner = windowGetBottomRight(p->w_info);
       // set position of w_status
-      windowSetPosition(p->w_status, dx, info_br_corner.y);
+      windowSetPosition(p->w_status, dx, Y_BORDER);
       windowSetWidth(p->w_status, total_br_corner.x - dx);
       windowSetVisibility(p->w_status, p->time_paused);
 
