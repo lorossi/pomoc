@@ -1221,6 +1221,19 @@ void windowSetVisibility(Window *w, int visibility)
 }
 
 /**
+ * @brief Toggles a visibility of a window
+ * 
+ * @param w pointer to window
+ * @return int current visibility status (0: invisibile, 1: visible)
+ */
+int windowToggleVisibility(Window *w)
+{
+  w->visible = !w->visible;
+
+  return w->visible;
+}
+
+/**
  * @brief Returns window size, if visibile. Otherwise, returns an empty rectangle.
  * 
  * @param w pointer to window

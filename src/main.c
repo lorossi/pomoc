@@ -80,7 +80,7 @@ Phase *set_initial_phase(Phase phases[3]);
 void reset_current_time(Parameters *p);
 void format_elapsed_time(int elapsed, char *buffer);
 void format_local_time(char *buffer);
-int get_random_quote(Window *w);
+int place_random_quote(Window *w);
 void format_date(char *buffer);
 void next_phase(Parameters *p);
 int save_stats(Parameters *p);
@@ -133,12 +133,14 @@ int file_count_lines(FILE *fp)
   return lines;
 }
 
+/* Handler for CTRL+C */
 void SIGINT_handler()
 {
   sigint_called = 1;
   return;
 }
 
+/* Handler for terminal resize */
 void SIGWINCH_handler()
 {
   sigwinch_called = 1;
@@ -249,6 +251,7 @@ Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_tot
 
 void delete_parameters(Parameters *p)
 {
+  // free memory and delete parameters
   pthread_mutex_destroy(p->terminal_lock);
   free(p->terminal_lock);
   free(p->tone);
@@ -341,7 +344,7 @@ void format_local_time(char *buffer)
 }
 
 /* Get random quote and save into window */
-int get_random_quote(Window *w)
+int place_random_quote(Window *w)
 {
   char r_buffer[BUFLEN], l_buffer[BUFLEN];
   int rindex, count;
@@ -595,6 +598,8 @@ void *beep_async(void *args)
 /* Routine handling terminal output */
 void *show_routine(void *args)
 {
+  // TODO refactor here
+
   Parameters *p = args;
 
   while (p->loop)
@@ -761,7 +766,7 @@ void *advance_routine(void *args)
         // go to next
         next_phase(p);
         // load a new quote
-        get_random_quote(p->w_quote);
+        place_random_quote(p->w_quote);
         // force windows reload
         p->windows_force_reload = 1;
       }
@@ -918,7 +923,12 @@ void *keypress_routine(void *args)
     }
     else if (key == 'q')
     {
-      get_random_quote(p->w_quote);
+      place_random_quote(p->w_quote);
+      p->windows_force_reload = 1;
+    }
+    else if (key == 'i')
+    {
+      windowToggleVisibility(p->w_controls);
       p->windows_force_reload = 1;
     }
 
@@ -962,14 +972,14 @@ int main()
   windowSetAutoWidth(w_quote, 0);
   windowSetFGcolor(w_quote, fg_BRIGHT_BLUE);
   windowSetTextStyle(w_quote, text_ITALIC);
-  get_random_quote(w_quote);
+  place_random_quote(w_quote);
   // window with info
   w_controls = createWindow(0, 0);
   windowSetAlignment(w_controls, 0);
   windowSetPadding(w_controls, PADDING);
   windowSetAutoWidth(w_controls, 0);
   windowSetFGcolor(w_controls, fg_BRIGHT_GREEN);
-  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, ctrl+c to exit");
+  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, I to hide this window, ctrl+c to exit");
   // window showing is timer is currently paused
   w_paused = createWindow(0, 0);
   windowSetAlignment(w_paused, 0);

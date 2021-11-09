@@ -208,6 +208,7 @@ void windowSetSize(Window *w, int width, int height);
 void windowSetWidth(Window *w, int width);
 void windowSetHeight(Window *w, int height);
 void windowSetVisibility(Window *w, int visibility);
+int windowToggleVisibility(Window *w);
 Rectangle windowGetSize(Window *w);
 void windowSetPosition(Window *w, int x, int y);
 void windowMoveBy(Window *w, int dx, int dy);
