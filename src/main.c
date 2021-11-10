@@ -610,7 +610,8 @@ void *show_routine(void *args)
     // remove old lines
     windowDeleteAllLines(p->w_phase);
     windowDeleteAllLines(p->w_total);
-    // update w_phase color
+
+    // update windows color
     windowSetFGcolor(p->w_phase, p->current_phase->fg_color);
     windowSetBGcolor(p->w_phase, p->current_phase->bg_color);
 
@@ -679,11 +680,21 @@ void *show_routine(void *args)
       windowSetPosition(p->w_controls, dx, quotes_br_corner.y);
       windowSetWidth(p->w_controls, total_br_corner.x - dx);
       windowAutoResize(p->w_controls); // trigger resize to get the actual width
+                                       // set position of w_paused
 
-      Position info_br_corner = windowGetBottomRight(p->w_controls);
-      // set position of w_paused
-      windowSetPosition(p->w_paused, dx, info_br_corner.y);
-      windowSetWidth(p->w_paused, info_br_corner.x - dx);
+      if (windowGetVisibility(p->w_controls))
+      {
+        // since info window is visible, get its position
+        Position info_br_corner = windowGetBottomRight(p->w_controls);
+        windowSetPosition(p->w_paused, dx, info_br_corner.y);
+      }
+      else
+      {
+        // otherwise, place below quotes
+        windowSetPosition(p->w_paused, dx, quotes_br_corner.y);
+      }
+
+      windowSetWidth(p->w_paused, quotes_br_corner.x - dx);
       windowSetHeight(p->w_paused, 3);
       windowSetVisibility(p->w_paused, p->time_paused);
 
@@ -691,13 +702,6 @@ void *show_routine(void *args)
       pthread_mutex_lock(p->terminal_lock);
       // clear terminal
       clear_terminal();
-
-      // clear all windows
-      windowClear(p->w_phase);
-      windowClear(p->w_total);
-      windowClear(p->w_quote);
-      windowClear(p->w_controls);
-      windowClear(p->w_paused);
 
       // display all
       windowShow(p->w_phase);
@@ -709,7 +713,7 @@ void *show_routine(void *args)
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
-      // don't update again
+      // reset flag
       p->windows_force_reload = 0;
     }
 
@@ -870,9 +874,6 @@ void *keypress_routine(void *args)
       {
         // keep time of the frozed elapsed phase
         p->frozen_elapsed = (time(NULL) - p->current_phase->started);
-        // add info in the opportune window
-        windowDeleteAllLines(p->w_paused);
-        windowAddLine(p->w_paused, "WARNING, TIMER IS CURRENTLY PAUSED");
       }
       // force windows refresh
       p->windows_force_reload = 1;
@@ -895,7 +896,6 @@ void *keypress_routine(void *args)
       d = createDialog(0, Y_BORDER);
       dialogSetPadding(d, 4);
       dialogSetText(d, "Do you want to skip the current session?", 1);
-      dialogSetButtons(d, "YES", "NO");
       dialogCenter(d, 1, 0);
       dialogShow(d);
       ret = dialogWaitResponse(d);
@@ -989,6 +989,7 @@ int main()
   windowSetFGcolor(w_paused, fg_BRIGHT_RED);
   windowSetTextStyle(w_paused, text_BLINKING);
   windowSetVisibility(w_paused, 0);
+  windowAddLine(w_paused, "WARNING, TIMER IS CURRENTLY PAUSED");
 
   // pack the parameters
   p = init_parameters(current_phase, w_phase, w_total, w_quote, w_controls, w_paused);

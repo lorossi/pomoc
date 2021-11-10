@@ -345,10 +345,10 @@ void _windowDrawBorder(Window *w)
   {
     for (int x = 0; x < width; x++)
     {
+      move_cursor_to(x + w->position.x, y + w->position.y);
+
       if (y == 0)
       {
-        move_cursor_to(x + w->position.x, y + w->position.y);
-
         // top line
         if (x == 0)
           printf("\u250c"); // top left corner
@@ -359,8 +359,6 @@ void _windowDrawBorder(Window *w)
       }
       else if (y == height - 1)
       {
-        move_cursor_to(x + w->position.x, y + w->position.y);
-
         // bottom line
         if (x == 0)
           printf("\u2514"); // bottom left corner
@@ -371,9 +369,11 @@ void _windowDrawBorder(Window *w)
       }
       else if (x == 0 || x == width - 1)
       {
-        move_cursor_to(x + w->position.x, y + w->position.y);
-
         printf("\u2502"); // vertical line
+      }
+      else
+      {
+        printf(" "); // empty space
       }
     }
 
@@ -1245,6 +1245,17 @@ Rectangle windowGetSize(Window *w)
     return w->size;
 
   return createRectangle(0, 0);
+}
+
+/**
+ * @brief Returns window visibility.
+ * 
+ * @param w pointer to window
+ * @return int 1 for visible, 0 for hidden
+ */
+int windowGetVisibility(Window *w)
+{
+  return w->visible;
 }
 
 /**
