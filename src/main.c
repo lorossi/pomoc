@@ -79,7 +79,7 @@ void delete_parameters(Parameters *p);
 Phase *set_initial_phase(Phase phases[3]);
 void reset_current_time(Parameters *p);
 void format_elapsed_time(int elapsed, char *buffer);
-void format_local_time(char *buffer);
+void format_time_delta(char *buffer, int delta_seconds);
 int place_random_quote(Window *w);
 void format_date(char *buffer);
 void next_phase(Parameters *p);
@@ -333,13 +333,13 @@ void format_elapsed_time(int elapsed, char *buffer)
 }
 
 /* Format local time and save into buffer */
-void format_local_time(char *buffer)
+void format_time_delta(char *buffer, int delta_seconds)
 {
   time_t now;
   struct tm tm;
-  now = time(NULL);
+  now = time(NULL) + (time_t)delta_seconds;
   tm = *localtime(&now);
-  sprintf(buffer, "%d-%02d-%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+  sprintf(buffer, "%02d:%02d:%02d", tm.tm_hour, tm.tm_min, tm.tm_sec);
   return;
 }
 
@@ -611,10 +611,6 @@ void *show_routine(void *args)
     windowDeleteAllLines(p->w_phase);
     windowDeleteAllLines(p->w_total);
 
-    // update windows color
-    windowSetFGcolor(p->w_phase, p->current_phase->fg_color);
-    windowSetBGcolor(p->w_phase, p->current_phase->bg_color);
-
     // first line of phase window
     if (p->current_phase->repetitions > 0)
       sprintf(buffer, "current phase: %s [%i/%i]", p->current_phase->name, p->current_phase->completed + 1, p->current_phase->repetitions);
@@ -642,10 +638,11 @@ void *show_routine(void *args)
     windowAddLine(p->w_total, buffer);
 
     // third line of w_total
-    format_local_time(buffer);
+    int time_remaining = p->current_phase->duration - (time(NULL) - p->current_phase->started);
+    format_time_delta(num_buffer, time_remaining);
+    sprintf(buffer, "phase ending: %s", num_buffer);
     windowAddLine(p->w_total, buffer);
 
-    // refresh
     // wait for exclusive use of terminal
     pthread_mutex_lock(p->terminal_lock);
     windowShow(p->w_phase);
@@ -655,6 +652,10 @@ void *show_routine(void *args)
 
     if (p->windows_force_reload)
     {
+      // update windows color
+      windowSetFGcolor(p->w_phase, p->current_phase->fg_color);
+      windowSetBGcolor(p->w_phase, p->current_phase->bg_color);
+
       // get largest window
       int largest, terminal_width, dx;
       largest = windowGetSize(p->w_phase).width + windowGetSize(p->w_total).width + 1;
@@ -979,7 +980,7 @@ int main()
   windowSetPadding(w_controls, PADDING);
   windowSetAutoWidth(w_controls, 0);
   windowSetFGcolor(w_controls, fg_BRIGHT_GREEN);
-  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, I to hide this window, ctrl+c to exit");
+  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, I to hide this window, CTRL+C to exit");
   // window showing is timer is currently paused
   w_paused = createWindow(0, 0);
   windowSetAlignment(w_paused, 0);
@@ -999,7 +1000,7 @@ int main()
   hide_cursor();
 
   // check if a previous file session is available
-  if (check_save())
+  if (check_save() == 1)
   {
     Dialog *d;
     int ret;
