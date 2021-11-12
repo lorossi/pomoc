@@ -11,7 +11,6 @@
 #include "terminal.h"
 #include "constants.h"
 
-/* Structs declaration */
 typedef struct phase
 {
   char *name;               // name of the phase
@@ -49,49 +48,61 @@ typedef struct
   int time_paused, frozen_elapsed;                             // flag to pause time
 } Parameters;
 
-/* Constants */
+volatile int sigint_called;   // flag for sigint
+volatile int sigwinch_called; // flag for sigwinch
 
-// global variables are bad but how could I use interrupts otherwise?
-volatile int sigint_called;
-volatile int sigwinch_called;
-
-/* Functions declaration */
 int file_read_line(char *buffer, int max_bytes, FILE *fp);
 int file_count_lines(FILE *fp);
+
+int check_savefile();
+int load_savefile(Parameters *p, Phase *phases);
+int save_savefile(Parameters *p);
+
+int check_settings();
+int load_settings(int *durations);
+int save_settings(int *durations);
+
 void SIGWINCH_handler();
 void SIGINT_handler();
-void msec_sleep(int msec);
-void sec_sleep(int sec);
-void init_phases(Phase *phases, int argc, char *argv[]);
+
+void ms_sleep(int ms);
+void s_sleep(int sec);
+
+Phase *init_phases(Phase *phases, int argc, char *argv[]);
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused);
 void delete_parameters(Parameters *p);
 Phase *set_initial_phase(Phase *phases);
 void reset_current_time(Parameters *p);
-void format_elapsed_time(int elapsed, char *buffer);
-void format_time_delta(char *buffer, int delta_seconds);
-int place_random_quote(Window *w);
-void format_date(char *buffer);
+void start_time(Parameters *p);
+void pause_time(Parameters *p);
 void next_phase(Parameters *p);
-int check_save();
-int load_save(Parameters *p, Phase *phases);
-int save_file(Parameters *p);
-int check_settings();
-int load_settings(int *durations);
-int save_settings(int *durations);
-void toggle_all_windows(Parameters *p, int visibility);
+
+void format_elapsed_time(int elapsed, char *buffer);
+void format_date(char *buffer);
+void format_time_delta(char *buffer, int delta_seconds);
+
+int place_random_quote(Window *w);
+void set_windows_visibility(Parameters *p, int visibility);
+
 void *beep_async(void *args);
 void *show_routine(void *args);
 void *advance_routine(void *args);
 void *save_routine(void *args);
 void *keypress_routine(void *args);
+
 int main(int argc, char *argv[]);
 
-/* Code starts here */
-
-/* Read the current line from file */
+/**
+ * @brief Reads a line from file, advance the pointer.
+ * 
+ * @param buffer pointer to line buffer
+ * @param max_bytes maximum number of bytes to read
+ * @param fp pointer to file
+ * @return int number of read bytes, -1 in case of error
+ */
 int file_read_line(char *buffer, int max_bytes, FILE *fp)
 {
-  if (fgets(buffer, BUFLEN, fp) == NULL)
+  if (fgets(buffer, max_bytes, fp) == NULL)
     return -1;
 
   int len = strlen(buffer);
@@ -100,7 +111,12 @@ int file_read_line(char *buffer, int max_bytes, FILE *fp)
   return len;
 }
 
-/* Count the number of lines in a file. */
+/**
+ * @brief Counts number of lines in a file.
+ * 
+ * @param fp pointer to file
+ * @return int number of lines in file
+ */
 int file_count_lines(FILE *fp)
 {
   fpos_t old_pos;
@@ -125,46 +141,315 @@ int file_count_lines(FILE *fp)
   return lines;
 }
 
-/* Handler for CTRL+C */
+/**
+ * @brief Checks if a save from today is already present.
+ * 
+ * @return int -1 if file is not found, -2 is save is from another day, 1 if save is valid
+ */
+int check_savefile()
+{
+  FILE *fp;
+  char buffer[BUFLEN];
+  char r_buffer[BUFLEN];
+
+  fp = fopen(SAVE_PATH, "r");
+  if (fp == NULL)
+    return -1;
+
+  // read date
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -1;
+
+  // format current date
+  format_date(buffer);
+
+  if (strcmp(buffer, r_buffer) != 0)
+    return -2;
+
+  return 1;
+}
+
+/**
+ * @brief Loads save from file.
+ * 
+ * @param p pointer to parameters structs
+ * @param phases pointer to phases
+ * @return int -1 if file is not found, negative values for other errors, 0 if save is correctly loaded
+ */
+int load_savefile(Parameters *p, Phase *phases)
+{
+  FILE *fp;
+  char r_buffer[BUFLEN];
+  int num_buffer;
+
+  // if the save is not from today, return
+  if (check_savefile() == -1)
+    return -2;
+
+  fp = fopen(SAVE_PATH, "r");
+  if (fp == NULL)
+    return -1;
+
+  // read date, discarding first line
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -1;
+
+  // read phase elapsed
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -2;
+
+  // update the parameters struct
+  p->phase_elapsed = atoi(r_buffer);
+
+  // read total study elapsed
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -3;
+  // update the parameters struct
+  p->previous_elapsed = atoi(r_buffer);
+
+  // read total study phases
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -4;
+  // update the parameters struct
+  p->study_phases = atoi(r_buffer);
+
+  // read current phase id
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -5;
+
+  // update the parameters struct
+  num_buffer = atoi(r_buffer);
+  // cycle to find the correct phase
+  for (int i = 0; i < 3; i++)
+  {
+    if (phases[i].id == num_buffer)
+    {
+      p->current_phase = phases + i;
+      break;
+    }
+
+    return -6;
+  }
+
+  // read current phase completed
+  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
+    return -7;
+  // update the parameters struct
+  p->current_phase->completed = atoi(r_buffer);
+
+  return 0;
+}
+
+/* 
+*/
+
+/**
+ * @brief Saves stats to file.
+  Structure of the save file:
+  - timestamp (year-month-day)
+  - phase elapsed
+  - total study elapsed
+  - total study phases
+  - current phase id
+  - current phase completed
+  - current phase started
+ * 
+ * @param p pointer to parameters
+ * @return int -1 in case of error, 0 in case of success
+ */
+int save_savefile(Parameters *p)
+{
+  FILE *fp;
+  char w_buffer[BUFLEN];
+
+  fp = fopen(SAVE_PATH, "w");
+  if (fp == NULL)
+    return -1;
+
+  // save timestamp
+  format_date(w_buffer);
+  fputs(w_buffer, fp);
+  fputc('\n', fp);
+
+  // save phase elapsed
+  sprintf(w_buffer, "%i\n", p->phase_elapsed);
+  fputs(w_buffer, fp);
+
+  // save total study elapsed
+  sprintf(w_buffer, "%i\n", p->study_elapsed);
+  fputs(w_buffer, fp);
+
+  // save total study phases
+  sprintf(w_buffer, "%i\n", p->study_phases);
+  fputs(w_buffer, fp);
+
+  // save current phase id
+  sprintf(w_buffer, "%i\n", p->current_phase->id);
+  fputs(w_buffer, fp);
+
+  // save current completed phases
+  sprintf(w_buffer, "%i\n", p->current_phase->completed);
+  fputs(w_buffer, fp);
+
+  // save current phase started
+  sprintf(w_buffer, "%li\n", p->current_phase->started);
+  fputs(w_buffer, fp);
+
+  fclose(fp);
+
+  return 0;
+}
+
+/**
+ * @brief Checks if settings file exists.
+ * 
+ * @return int -1 if file does not exist, -2 if it's not valid, 0 if it's valid
+ */
+int check_settings()
+{
+  FILE *fp;
+
+  fp = fopen(SETTINGS_PATH, "r");
+
+  if (fp == NULL)
+    return -1;
+
+  // check if there are enough lines
+  if (file_count_lines(fp) < 4)
+    return -2;
+
+  return 0;
+}
+
+/**
+ * @brief Loads settings from file.
+ * 
+ * @param durations pointer to array to hold the lines
+ * @return int -1 if file does not exist, -2 if it's not valid, 0 if it's valid
+ */
+int load_settings(int *durations)
+{
+  FILE *fp;
+  char r_buffer[BUFLEN];
+
+  fp = fopen(SETTINGS_PATH, "r");
+
+  if (fp == NULL)
+    return -1;
+
+  // check if there are enough lines
+  if (file_count_lines(fp) < 4)
+    return -2;
+
+  // populate array with integers loaded from file
+  for (int i = 0; i < 4; i++)
+  {
+    file_read_line(r_buffer, BUFLEN, fp);
+    //! ATOI does not check if the value is valid
+    *(durations + i) = atoi(r_buffer);
+  }
+
+  return 0;
+}
+
+/**
+ * @brief Save settings to file.
+ * 
+ * @param durations pointer to duration 
+ * @return int -1 if file is not writeable, 0 otherwise
+ */
+int save_settings(int *durations)
+{
+  FILE *fp;
+  char w_buffer[BUFLEN];
+
+  fp = fopen(SETTINGS_PATH, "w");
+  if (fp == NULL)
+    return -1;
+
+  // save study duration
+  sprintf(w_buffer, "%i\n", *durations);
+  fputs(w_buffer, fp);
+
+  // save short break duration
+  sprintf(w_buffer, "%i\n", *(durations + 1));
+  fputs(w_buffer, fp);
+
+  // save long break duration
+  sprintf(w_buffer, "%i\n", *(durations + 2));
+  fputs(w_buffer, fp);
+
+  // save study sessions
+  sprintf(w_buffer, "%i\n", *(durations + 3));
+  fputs(w_buffer, fp);
+
+  return 0;
+}
+
+/**
+ * @brief Handler for CTRL+C.
+ * 
+ */
 void SIGINT_handler()
 {
   sigint_called = 1;
   return;
 }
 
-/* Handler for terminal resize */
+/**
+ * @brief Handler for terminal resize.
+ * 
+ */
 void SIGWINCH_handler()
 {
   sigwinch_called = 1;
   return;
 }
 
-/* Sleep a set amount of ms */
-void msec_sleep(int msec)
+/**
+ * @brief Sleeps a set amount of time (milliseconds).
+ * 
+ * @param ms millisecond
+ */
+void ms_sleep(int ms)
 {
-  if (msec < 0)
+  // check if number of milli second is valid
+  if (ms < 0)
     return;
 
+  // pack a struct
   struct timespec ts;
-  ts.tv_sec = msec / 1000;
-  ts.tv_nsec = (msec % 1000) * 1000000;
+  ts.tv_sec = ms / 1000;
+  ts.tv_nsec = (ms % 1000) * 1000000;
+  // actually sleep
   nanosleep(&ts, NULL);
 }
 
-/* Sleep a set amount of s */
-void sec_sleep(int sec)
+/**
+ * @brief Sleeps a set amount of time (seconds).
+ * 
+ * @param s seconds
+ */
+void s_sleep(int s)
 {
-  if (sec < 0)
+  // check if number of second is valid
+  if (s < 0)
     return;
 
-  struct timespec ts;
-  ts.tv_sec = sec;
-  ts.tv_nsec = 0;
-  nanosleep(&ts, NULL);
+  // sleep...
+  ms_sleep(s * 1000);
 }
 
 /* Assign all the variables needed to run the timer */
-void init_phases(Phase *phases, int argc, char *argv[])
+/**
+ * @brief Assigns all the variables needed to run the timer.
+ * 
+ * @param phases pointer to phases array
+ * @param argc 
+ * @param argv 
+ * @return Phase* current phase
+ */
+Phase *init_phases(Phase *phases, int argc, char *argv[])
 {
   // preload durations to default values
   int durations[] = {
@@ -179,10 +464,8 @@ void init_phases(Phase *phases, int argc, char *argv[])
     // if arguments have been passed, load them
     if (strcmp(argv[1], "reset") != 0)
     {
-      for (int i = 1; i < argc; i++)
-      {
+      for (int i = 1; i < argc && i < 5; i++)
         durations[i - 1] = atoi(argv[i]);
-      }
     }
   }
   else if (check_settings() == 0)
@@ -190,6 +473,8 @@ void init_phases(Phase *phases, int argc, char *argv[])
     // otherwise, just load from file
     load_settings(durations);
   }
+
+  save_settings(durations);
 
   // create array of phases
   phases[0] = (Phase){
@@ -232,11 +517,25 @@ void init_phases(Phase *phases, int argc, char *argv[])
       .bg_color = bg_DEFAULT,
   };
 
-  save_settings(durations);
+  phases->started = time(NULL);
+  return phases; // returns current phase
 }
 
+/**
+ * @brief Inits parameters.
+ * 
+ * @param current_phase 
+ * @param w_phase 
+ * @param w_total 
+ * @param w_quote 
+ * @param w_controls 
+ * @param w_paused 
+ * @return Parameters* 
+ */
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused)
 {
+  // TODO pack all the windows into a single container
+
   Parameters *p = malloc(sizeof(Parameters));
   // create mutex
   p->terminal_lock = malloc(sizeof(*(p->terminal_lock)));
@@ -268,6 +567,11 @@ Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_tot
   return p;
 }
 
+/**
+ * @brief Deletes parameters struct.
+ * 
+ * @param p pointer to parameters struct
+ */
 void delete_parameters(Parameters *p)
 {
   // free memory and delete parameters
@@ -277,30 +581,42 @@ void delete_parameters(Parameters *p)
   free(p);
 }
 
-/* Set initial phase */
-Phase *set_initial_phase(Phase *phases)
-{
-  Phase *current_phase;
-  // set current phase
-  current_phase = phases;
-  // reset current phase time
-  current_phase->started = time(NULL);
-  return current_phase;
-}
-
-/* Reset current phase time */
+/**
+ * @brief Resets current phase time.
+ * 
+ * @param p pointer to parameters struct
+ */
 void reset_current_time(Parameters *p)
 {
   p->current_phase->started = time(NULL);
 }
 
-/* Start counting time */
+/**
+ * @brief Starts counting time.
+ * 
+ * @param p pointer to parameters struct
+ */
 void start_time(Parameters *p)
 {
   p->time_paused = 0;
 }
 
-/* Go to next phase */
+/**
+ * @brief Pauses current phase.
+ * 
+ * @param p pointer to parameters struct
+ */
+void pause_time(Parameters *p)
+{
+  p->time_paused = 1;
+  p->frozen_elapsed = (time(NULL) - p->current_phase->started);
+}
+
+/**
+ * @brief Advances to next phase.
+ * 
+ * @param p pointer to parameters struct
+ */
 void next_phase(Parameters *p)
 {
   pthread_t beep_thread;
@@ -335,23 +651,41 @@ void next_phase(Parameters *p)
   reset_current_time(p);
 }
 
-/* Format elapsed time and save into buffer */
+/**
+ * @brief Formats elapsed time.
+ * 
+ * @param elapsed elapsed time in seconds
+ * @param pointer to buffer string
+ */
 void format_elapsed_time(int elapsed, char *buffer)
 {
+  // TODO swap the two parameters
   int seconds, minutes, hours;
+  // unpack time into hours, minutes, seconds
   hours = elapsed / 3600;
   minutes = (elapsed % 3600) / 60;
   seconds = elapsed % 60;
 
   if (hours > 0)
+  {
+    // if hours is bigger than 0, save into final string
     sprintf(buffer, "%02d:%02d:%02d", hours, minutes, seconds);
+  }
   else
+  {
+    // otherwise, just neglect it
     sprintf(buffer, "%02d:%02d", minutes, seconds);
+  }
 
   return;
 }
 
-/* Format local time and save into buffer */
+/**
+ * @brief Formats tile difference (in seconds).
+ * 
+ * @param pointer to buffer string
+ * @param delta_seconds elapsed time in seconds
+ */
 void format_time_delta(char *buffer, int delta_seconds)
 {
   time_t now;
@@ -362,7 +696,26 @@ void format_time_delta(char *buffer, int delta_seconds)
   return;
 }
 
-/* Get random quote and save into window */
+/**
+ * @brief Formats date (discarding time).
+ * 
+ * @param pointer to buffer string
+ */
+void format_date(char *buffer)
+{
+  time_t now;
+  struct tm tm;
+  now = time(NULL);
+  tm = *localtime(&now);
+  sprintf(buffer, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+}
+
+/**
+ * @brief Gets random quote and saves it into window.
+ * 
+ * @param w pointer to window
+ * @return int -1 if file is not readable, 0 in case of success
+ */
 int place_random_quote(Window *w)
 {
   char r_buffer[BUFLEN], l_buffer[BUFLEN];
@@ -437,224 +790,14 @@ int place_random_quote(Window *w)
   return 0;
 }
 
-/* Format local date to compare savefiles and save into buffer. */
-void format_date(char *buffer)
-{
-  time_t now;
-  struct tm tm;
-  now = time(NULL);
-  tm = *localtime(&now);
-  sprintf(buffer, "%d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-}
-
-/* Save stats to file.
-Structure of the save file:
-- timestamp (year-month-day)
-- phase elapsed
-- total study elapsed
-- total study phases
-- current phase id
-- current phase completed
-- current phase started
-*/
-int save_file(Parameters *p)
-{
-  FILE *fp;
-  char w_buffer[BUFLEN];
-
-  fp = fopen(SAVE_PATH, "w");
-  if (fp == NULL)
-    return -1;
-
-  // save timestamp
-  format_date(w_buffer);
-  fputs(w_buffer, fp);
-  fputc('\n', fp);
-
-  // save phase elapsed
-  sprintf(w_buffer, "%i\n", p->phase_elapsed);
-  fputs(w_buffer, fp);
-
-  // save total study elapsed
-  sprintf(w_buffer, "%i\n", p->study_elapsed);
-  fputs(w_buffer, fp);
-
-  // save total study phases
-  sprintf(w_buffer, "%i\n", p->study_phases);
-  fputs(w_buffer, fp);
-
-  // save current phase id
-  sprintf(w_buffer, "%i\n", p->current_phase->id);
-  fputs(w_buffer, fp);
-
-  // save current completed phases
-  sprintf(w_buffer, "%i\n", p->current_phase->completed);
-  fputs(w_buffer, fp);
-
-  // save current phase started
-  sprintf(w_buffer, "%li\n", p->current_phase->started);
-  fputs(w_buffer, fp);
-
-  fclose(fp);
-
-  return 0;
-}
-
-/* Checks if a save from today is already present */
-int check_save()
-{
-  FILE *fp;
-  char buffer[BUFLEN];
-  char r_buffer[BUFLEN];
-
-  fp = fopen(SAVE_PATH, "r");
-  if (fp == NULL)
-    return -1;
-
-  // read date
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -1;
-
-  // format current date
-  format_date(buffer);
-
-  if (strcmp(buffer, r_buffer) != 0)
-    return 0;
-
-  return 1;
-}
-
-/* Loads stats from file. */
-int load_save(Parameters *p, Phase *phases)
-{
-  FILE *fp;
-  char r_buffer[BUFLEN];
-  int num_buffer;
-
-  // if the save is not from today, return
-  if (check_save() == -1)
-    return 0;
-
-  fp = fopen(SAVE_PATH, "r");
-  if (fp == NULL)
-    return -1;
-
-  // read date, discarding first line
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -1;
-
-  // read phase elapsed
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -2;
-
-  // update the parameters struct
-  p->phase_elapsed = atoi(r_buffer);
-
-  // read total study elapsed
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -3;
-  // update the parameters struct
-  p->previous_elapsed = atoi(r_buffer);
-
-  // read total study phases
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -4;
-  // update the parameters struct
-  p->study_phases = atoi(r_buffer);
-
-  // read current phase id
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -5;
-
-  // update the parameters struct
-  num_buffer = atoi(r_buffer);
-  // cycle to find the correct phase
-  for (int i = 0; i < 3; i++)
-  {
-    if (phases[i].id == num_buffer)
-    {
-      p->current_phase = phases + i;
-      break;
-    }
-
-    return -6;
-  }
-
-  // read current phase completed
-  if (file_read_line(r_buffer, BUFLEN, fp) == -1)
-    return -7;
-  // update the parameters struct
-  p->current_phase->completed = atoi(r_buffer);
-
-  return 0;
-}
-
-/* Check if settings file exists */
-int check_settings()
-{
-  FILE *fp;
-  fp = fopen(SETTINGS_PATH, "r");
-  if (fp == NULL)
-    return -1;
-
-  if (file_count_lines(fp) < 4)
-    return -2;
-
-  return 0;
-}
-
-/* Load settings from file */
-int load_settings(int *durations)
-{
-  FILE *fp;
-  char r_buffer[BUFLEN];
-
-  fp = fopen(SETTINGS_PATH, "r");
-  if (fp == NULL)
-    return -1;
-
-  if (file_count_lines(fp) < 4)
-    return -2;
-
-  for (int i = 0; i < 4; i++)
-  {
-    file_read_line(r_buffer, BUFLEN, fp);
-    *(durations + i) = atoi(r_buffer);
-  }
-
-  return 0;
-}
-
-int save_settings(int *durations)
-{
-  FILE *fp;
-  char w_buffer[BUFLEN];
-
-  fp = fopen(SETTINGS_PATH, "w");
-  if (fp == NULL)
-    return -1;
-
-  // save study duration
-  sprintf(w_buffer, "%i\n", *durations);
-  fputs(w_buffer, fp);
-
-  // save short break duration
-  sprintf(w_buffer, "%i\n", *(durations + 1));
-  fputs(w_buffer, fp);
-
-  // save long break duration
-  sprintf(w_buffer, "%i\n", *(durations + 2));
-  fputs(w_buffer, fp);
-
-  // save study sessions
-  sprintf(w_buffer, "%i\n", *(durations + 3));
-  fputs(w_buffer, fp);
-
-  return 0;
-}
-
-/* Clears terminal and hides/shows all windows on screen */
-void toggle_all_windows(Parameters *p, int visibility)
+/* hides/shows all windows on screen */
+/**
+ * @brief Sets the windows visibility.
+ * 
+ * @param p pointer to parameters
+ * @param visibility 0 for invisible, 1 for visible
+ */
+void set_windows_visibility(Parameters *p, int visibility)
 {
   clear_terminal();
   windowSetVisibility(p->w_phase, visibility);
@@ -663,7 +806,12 @@ void toggle_all_windows(Parameters *p, int visibility)
   windowSetVisibility(p->w_paused, visibility);
 }
 
-/* Async beeping */
+/**
+ * @brief Async beeping.
+ * 
+ * @param args 
+ * @return void* 
+ */
 void *beep_async(void *args)
 {
   Parameters *p = args;
@@ -673,12 +821,17 @@ void *beep_async(void *args)
     pthread_mutex_lock(p->terminal_lock);
     terminal_beep();
     pthread_mutex_unlock(p->terminal_lock);
-    msec_sleep(delay);
+    ms_sleep(delay);
   }
   pthread_exit(0);
 }
 
-/* Routine handling terminal output */
+/**
+ * @brief Routine handling terminal output.
+ * 
+ * @param args 
+ * @return void* 
+ */
 void *show_routine(void *args)
 {
   // TODO refactor here
@@ -802,13 +955,18 @@ void *show_routine(void *args)
     }
 
     // idle
-    msec_sleep(SLEEP_INTERVAL);
+    ms_sleep(SLEEP_INTERVAL);
   }
   p->show_r = 0;
   pthread_exit(0);
 }
 
-/* Routine handling time */
+/**
+ * @brief Routine handling time.
+ * 
+ * @param args 
+ * @return void* 
+ */
 void *advance_routine(void *args)
 {
   Parameters *p = args;
@@ -860,13 +1018,18 @@ void *advance_routine(void *args)
       }
     }
 
-    msec_sleep(SLEEP_INTERVAL);
+    ms_sleep(SLEEP_INTERVAL);
   }
   p->advance_r = 0;
   pthread_exit(0);
 }
 
-/* Routing handling periodic saves. */
+/**
+ * @brief Routing handling periodic saves.
+ * 
+ * @param args 
+ * @return void* 
+ */
 void *save_routine(void *args)
 {
   Parameters *p = args;
@@ -876,18 +1039,23 @@ void *save_routine(void *args)
 
     if (time(NULL) - last_save > SAVEINTERVAL / 1000)
     {
-      save_file(p);
+      save_savefile(p);
       last_save = time(NULL);
     }
 
-    msec_sleep(SLEEP_INTERVAL);
+    ms_sleep(SLEEP_INTERVAL);
   }
 
   p->save_r = 0;
   pthread_exit(0);
 }
 
-/* Routine handling keypresses */
+/**
+ * @brief Routine handling keypresses.
+ * 
+ * @param args 
+ * @return void* 
+ */
 void *keypress_routine(void *args)
 {
   Parameters *p = args;
@@ -901,7 +1069,7 @@ void *keypress_routine(void *args)
       // hide all windows
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
-      toggle_all_windows(p, 0);
+      set_windows_visibility(p, 0);
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
@@ -926,7 +1094,7 @@ void *keypress_routine(void *args)
         // show windows again
         // wait for exclusive use of terminal
         pthread_mutex_lock(p->terminal_lock);
-        toggle_all_windows(p, 1);
+        set_windows_visibility(p, 1);
         // unlock terminal
         pthread_mutex_unlock(p->terminal_lock);
 
@@ -952,13 +1120,11 @@ void *keypress_routine(void *args)
 
     if (key == 'p')
     {
-      p->time_paused = !p->time_paused;
+      if (!p->time_paused)
+        pause_time(p);
+      else
+        start_time(p);
 
-      if (p->time_paused)
-      {
-        // keep time of the frozed elapsed phase
-        p->frozen_elapsed = (time(NULL) - p->current_phase->started);
-      }
       // force windows refresh
       p->windows_force_reload = 1;
     }
@@ -967,12 +1133,11 @@ void *keypress_routine(void *args)
       // hide all windows
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
-      toggle_all_windows(p, 0);
+      set_windows_visibility(p, 0);
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
-      p->time_paused = 1;
-      p->frozen_elapsed = (time(NULL) - p->current_phase->started);
+      pause_time(p);
 
       Dialog *d;
       int ret;
@@ -995,13 +1160,15 @@ void *keypress_routine(void *args)
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
       clear_terminal();
-      toggle_all_windows(p, 1);
+      set_windows_visibility(p, 1);
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
       // update flags
-      p->time_paused = 0;
+      start_time(p);
+
       p->windows_force_reload = 1;
+
       // reset tone
       p->tone->repetitions = 1;
     }
@@ -1016,7 +1183,7 @@ void *keypress_routine(void *args)
       p->windows_force_reload = 1;
     }
 
-    msec_sleep(SLEEP_INTERVAL);
+    ms_sleep(SLEEP_INTERVAL);
   }
 
   p->keypress_r = 0;
@@ -1038,8 +1205,7 @@ int main(int argc, char *argv[])
   Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused;
 
   // init phases, provide argv and argc to handle command line parsing
-  init_phases(phases, argc, argv);
-  current_phase = set_initial_phase(phases);
+  current_phase = init_phases(phases, argc, argv);
 
   // w_phase keeping track of current phase
   w_phase = createWindow(0, Y_BORDER);
@@ -1085,7 +1251,7 @@ int main(int argc, char *argv[])
   hide_cursor();
 
   // check if a previous file session is available
-  if (check_save() == 1)
+  if (check_savefile() == 1)
   {
     Dialog *d;
     int ret;
@@ -1101,7 +1267,7 @@ int main(int argc, char *argv[])
 
     // load stats from file
     if (ret)
-      load_save(p, phases);
+      load_savefile(p, phases);
   }
 
   // handle signal interrupt
@@ -1127,7 +1293,7 @@ int main(int argc, char *argv[])
   // Main thread IDLE
   while (p->show_r || p->advance_r || p->save_r || p->keypress_r)
   {
-    msec_sleep(SLEEP_INTERVAL / 4);
+    ms_sleep(SLEEP_INTERVAL);
   }
 
   // clean up
