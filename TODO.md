@@ -11,5 +11,6 @@
 - ~~As now, it does not work at all~~
   - ~~that's quite unfortunate~~
 - ~~Replace third line of phase window with end time of current phase~~
-- Add custom values for time (maybe via argv)
+- ~~Add custom values for time (maybe via argv)~~
 - Fix bugs on continue session dialog
+ 

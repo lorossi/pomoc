@@ -58,10 +58,11 @@ volatile int sigwinch_called;
 /* Functions declaration */
 int file_read_line(char *buffer, int max_bytes, FILE *fp);
 int file_count_lines(FILE *fp);
+void SIGWINCH_handler();
 void SIGINT_handler();
 void msec_sleep(int msec);
 void sec_sleep(int sec);
-void init_phases(Phase *phases);
+void init_phases(Phase *phases, int argc, char *argv[]);
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused);
 void delete_parameters(Parameters *p);
 Phase *set_initial_phase(Phase *phases);
@@ -83,7 +84,7 @@ void *show_routine(void *args);
 void *advance_routine(void *args);
 void *save_routine(void *args);
 void *keypress_routine(void *args);
-int main();
+int main(int argc, char *argv[]);
 
 /* Code starts here */
 
@@ -163,20 +164,31 @@ void sec_sleep(int sec)
 }
 
 /* Assign all the variables needed to run the timer */
-void init_phases(Phase *phases)
+void init_phases(Phase *phases, int argc, char *argv[])
 {
-  int durations[4];
+  // preload durations to default values
+  int durations[] = {
+      STUDYDURATION,
+      SHORTBREAKDURATION,
+      LONGBREAKDURATION,
+      STUDYSESSIONS,
+  };
 
-  if (check_settings() == 0)
+  if (argc > 1)
   {
-    load_settings(durations);
+    // if arguments have been passed, load them
+    if (strcmp(argv[1], "reset") != 0)
+    {
+      for (int i = 1; i < argc; i++)
+      {
+        durations[i - 1] = atoi(argv[i]);
+      }
+    }
   }
-  else
+  else if (check_settings() == 0)
   {
-    durations[0] = STUDYDURATION;
-    durations[1] = SHORTBREAKDURATION;
-    durations[2] = LONGBREAKDURATION;
-    durations[3] = STUDYSESSIONS;
+    // otherwise, just load from file
+    load_settings(durations);
   }
 
   // create array of phases
@@ -1011,7 +1023,7 @@ void *keypress_routine(void *args)
   pthread_exit(0);
 }
 
-int main()
+int main(int argc, char *argv[])
 {
   // init random seed
   srand(time(NULL));
@@ -1019,12 +1031,14 @@ int main()
   // set raw mode
   enter_raw_mode();
 
+  // declare variables
   pthread_t show_thread, advance_thread, save_thread, keypress_thread;
   Phase phases[3], *current_phase;
   Parameters *p;
   Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused;
 
-  init_phases(phases);
+  // init phases, provide argv and argc to handle command line parsing
+  init_phases(phases, argc, argv);
   current_phase = set_initial_phase(phases);
 
   // w_phase keeping track of current phase
