@@ -2,4 +2,5 @@ pomoc
 *.o
 *.d
 .SAVE
+.SETTINGS
 .vscode
