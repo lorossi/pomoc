@@ -964,7 +964,6 @@ void *keypress_routine(void *args)
     }
     else if (key == 's')
     {
-
       // hide all windows
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
@@ -973,6 +972,7 @@ void *keypress_routine(void *args)
       pthread_mutex_unlock(p->terminal_lock);
 
       p->time_paused = 1;
+      p->frozen_elapsed = (time(NULL) - p->current_phase->started);
 
       Dialog *d;
       int ret;
