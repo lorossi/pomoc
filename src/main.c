@@ -9,6 +9,7 @@
 #include <stdlib.h>  // for malloc() and free() and rand()
 
 #include "terminal.h"
+#include "constants.h"
 
 /* Structs declaration */
 typedef struct phase
@@ -50,19 +51,6 @@ typedef struct
 
 /* Constants */
 
-const int STUDYDURATION = 45;      // duration of the study phase, minutes
-const int SHORTBREAKDURATION = 15; // duration of the short break, minutes
-const int LONGBREAKDURATION = 20;  // duration of the long break, minutes
-const int STUDYSESSIONS = 4;       // number of study sessions before long break
-const int Y_BORDER = 1;            // Y border window positioning
-const int PADDING = 2;             // window text padding
-const int BUFLEN = 250;            // length of the buffers
-const int SAVEINTERVAL = 1000;     // interval between saves, msec
-const int SLEEP_INTERVAL = 100;    // threads sleep time, msec
-
-#define QUOTES_PATH ".QUOTES"
-#define SAVE_PATH ".SAVE"
-
 // global variables are bad but how could I use interrupts otherwise?
 volatile int sigint_called;
 volatile int sigwinch_called;
@@ -73,19 +61,22 @@ int file_count_lines(FILE *fp);
 void SIGINT_handler();
 void msec_sleep(int msec);
 void sec_sleep(int sec);
-void init_pomodoro(Phase phases[3]);
+void init_phases(Phase *phases);
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused);
 void delete_parameters(Parameters *p);
-Phase *set_initial_phase(Phase phases[3]);
+Phase *set_initial_phase(Phase *phases);
 void reset_current_time(Parameters *p);
 void format_elapsed_time(int elapsed, char *buffer);
 void format_time_delta(char *buffer, int delta_seconds);
 int place_random_quote(Window *w);
 void format_date(char *buffer);
 void next_phase(Parameters *p);
-int save_stats(Parameters *p);
 int check_save();
 int load_save(Parameters *p, Phase *phases);
+int save_file(Parameters *p);
+int check_settings();
+int load_settings(int *durations);
+int save_settings(int *durations);
 void toggle_all_windows(Parameters *p, int visibility);
 void *beep_async(void *args);
 void *show_routine(void *args);
@@ -172,14 +163,28 @@ void sec_sleep(int sec)
 }
 
 /* Assign all the variables needed to run the timer */
-void init_pomodoro(Phase phases[3])
+void init_phases(Phase *phases)
 {
+  int durations[4];
+
+  if (check_settings() == 0)
+  {
+    load_settings(durations);
+  }
+  else
+  {
+    durations[0] = STUDYDURATION;
+    durations[1] = SHORTBREAKDURATION;
+    durations[2] = LONGBREAKDURATION;
+    durations[3] = STUDYSESSIONS;
+  }
+
   // create array of phases
   phases[0] = (Phase){
       .name = "study",
       .id = 0,
-      .duration = STUDYDURATION,
-      .repetitions = STUDYSESSIONS,
+      .duration = durations[0],
+      .repetitions = durations[3],
       .completed = 0,
       .started = 0,
       .is_study = 1,
@@ -192,7 +197,7 @@ void init_pomodoro(Phase phases[3])
   phases[1] = (Phase){
       .name = "short break",
       .id = 1,
-      .duration = SHORTBREAKDURATION,
+      .duration = durations[1],
       .repetitions = 0,
       .completed = 0,
       .started = 0,
@@ -205,7 +210,7 @@ void init_pomodoro(Phase phases[3])
   phases[2] = (Phase){
       .name = "long break",
       .id = 2,
-      .duration = LONGBREAKDURATION,
+      .duration = durations[2],
       .repetitions = 0,
       .completed = 0,
       .started = 0,
@@ -214,6 +219,8 @@ void init_pomodoro(Phase phases[3])
       .fg_color = fg_GREEN,
       .bg_color = bg_DEFAULT,
   };
+
+  save_settings(durations);
 }
 
 Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused)
@@ -259,7 +266,7 @@ void delete_parameters(Parameters *p)
 }
 
 /* Set initial phase */
-Phase *set_initial_phase(Phase phases[3])
+Phase *set_initial_phase(Phase *phases)
 {
   Phase *current_phase;
   // set current phase
@@ -438,7 +445,7 @@ Structure of the save file:
 - current phase completed
 - current phase started
 */
-int save_stats(Parameters *p)
+int save_file(Parameters *p)
 {
   FILE *fp;
   char w_buffer[BUFLEN];
@@ -554,7 +561,7 @@ int load_save(Parameters *p, Phase *phases)
   {
     if (phases[i].id == num_buffer)
     {
-      p->current_phase = &phases[i];
+      p->current_phase = phases + i;
       break;
     }
 
@@ -566,6 +573,70 @@ int load_save(Parameters *p, Phase *phases)
     return -7;
   // update the parameters struct
   p->current_phase->completed = atoi(r_buffer);
+
+  return 0;
+}
+
+/* Check if settings file exists */
+int check_settings()
+{
+  FILE *fp;
+  fp = fopen(SETTINGS_PATH, "r");
+  if (fp == NULL)
+    return -1;
+
+  if (file_count_lines(fp) < 4)
+    return -2;
+
+  return 0;
+}
+
+/* Load settings from file */
+int load_settings(int *durations)
+{
+  FILE *fp;
+  char r_buffer[BUFLEN];
+
+  fp = fopen(SETTINGS_PATH, "r");
+  if (fp == NULL)
+    return -1;
+
+  if (file_count_lines(fp) < 4)
+    return -2;
+
+  for (int i = 0; i < 4; i++)
+  {
+    file_read_line(r_buffer, BUFLEN, fp);
+    *(durations + i) = atoi(r_buffer);
+  }
+
+  return 0;
+}
+
+int save_settings(int *durations)
+{
+  FILE *fp;
+  char w_buffer[BUFLEN];
+
+  fp = fopen(SETTINGS_PATH, "w");
+  if (fp == NULL)
+    return -1;
+
+  // save study duration
+  sprintf(w_buffer, "%i\n", *durations);
+  fputs(w_buffer, fp);
+
+  // save short break duration
+  sprintf(w_buffer, "%i\n", *(durations + 1));
+  fputs(w_buffer, fp);
+
+  // save long break duration
+  sprintf(w_buffer, "%i\n", *(durations + 2));
+  fputs(w_buffer, fp);
+
+  // save study sessions
+  sprintf(w_buffer, "%i\n", *(durations + 3));
+  fputs(w_buffer, fp);
 
   return 0;
 }
@@ -793,7 +864,7 @@ void *save_routine(void *args)
 
     if (time(NULL) - last_save > SAVEINTERVAL / 1000)
     {
-      save_stats(p);
+      save_file(p);
       last_save = time(NULL);
     }
 
@@ -953,7 +1024,7 @@ int main()
   Parameters *p;
   Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused;
 
-  init_pomodoro(phases);
+  init_phases(phases);
   current_phase = set_initial_phase(phases);
 
   // w_phase keeping track of current phase
