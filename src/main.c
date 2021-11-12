@@ -77,7 +77,7 @@ void start_time(Parameters *p);
 void pause_time(Parameters *p);
 void next_phase(Parameters *p);
 
-void format_elapsed_time(int elapsed, char *buffer);
+void format_elapsed_time(char *buffer, int elapsed);
 void format_date(char *buffer);
 void format_time_delta(char *buffer, int delta_seconds);
 
@@ -654,12 +654,11 @@ void next_phase(Parameters *p)
 /**
  * @brief Formats elapsed time.
  * 
+ * @param buffer pointer to buffer string
  * @param elapsed elapsed time in seconds
- * @param pointer to buffer string
  */
-void format_elapsed_time(int elapsed, char *buffer)
+void format_elapsed_time(char *buffer, int elapsed)
 {
-  // TODO swap the two parameters
   int seconds, minutes, hours;
   // unpack time into hours, minutes, seconds
   hours = elapsed / 3600;
@@ -859,7 +858,7 @@ void *show_routine(void *args)
     windowAddLine(p->w_phase, buffer);
 
     // format time
-    format_elapsed_time(p->phase_elapsed, num_buffer);
+    format_elapsed_time(num_buffer, p->phase_elapsed);
     // third line of phase window
     sprintf(buffer, "elapsed time: %s", num_buffer);
     windowAddLine(p->w_phase, buffer);
@@ -869,7 +868,7 @@ void *show_routine(void *args)
     windowAddLine(p->w_total, buffer);
 
     // second line of w_total
-    format_elapsed_time(p->study_elapsed, num_buffer);
+    format_elapsed_time(num_buffer, p->study_elapsed);
     sprintf(buffer, "total time studied: %s", num_buffer);
     windowAddLine(p->w_total, buffer);
 
