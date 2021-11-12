@@ -9,7 +9,7 @@ static const int Y_BORDER = 1;            // Y border window positioning
 static const int PADDING = 2;             // window text padding
 static const int BUFLEN = 250;            // length of the buffers
 static const int SAVEINTERVAL = 1000;     // interval between saves, msec
-static const int SLEEP_INTERVAL = 100;    // threads sleep time, msec
+static const int SLEEP_INTERVAL = 50;     // threads sleep time, msec
 
 #define QUOTES_PATH ".QUOTES"     // file containing the quotes
 #define SAVE_PATH ".SAVE"         // file containing the save for the current sessione
