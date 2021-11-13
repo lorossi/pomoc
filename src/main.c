@@ -26,13 +26,13 @@ typedef struct phase
   struct phase *next_after; // pointer to phase when the repetitions have ended
 } Phase;
 
-typedef struct panel
+typedef struct windows
 {
-  Window *w_phase;
-  Window *w_total;
-  Window *w_quote;
-  Window *w_controls;
-  Window *w_paused;
+  Window *w_phase;    // window showing current phase
+  Window *w_total;    // window showing total time studied
+  Window *w_quote;    // window showing a quote
+  Window *w_controls; // window showing keyboard controls
+  Window *w_paused;   // window telling if the timer is currently paused
 } Windows;
 
 typedef struct
@@ -41,20 +41,28 @@ typedef struct
   int speed;       // int in range [0-10]
 } Tone;
 
+typedef struct return_values
+{
+  int show_routine;     // return value from show routine
+  int advance_routine;  // return value from advance routine
+  int save_routine;     // return value from save routine
+  int keypress_routine; // return value from keypress routine
+} ReturnValues;
+
 typedef struct
 {
-  int loop;                                  // are the routines looping?
-  int show_r, advance_r, save_r, keypress_r; // return values of threads
-  int study_phases;                          // amount of currently studied phases
-  int windows_force_reload;                  // flag to force redraw of the windows
-  int phase_elapsed;                         // total time elapsed in the current phase
-  int study_elapsed;                         // total time studied in the session
-  int previous_elapsed;                      // elapsed loaded from file
-  int time_paused, frozen_elapsed;           // flag to pause time
-  Phase *current_phase;                      // current phase of the timer
-  pthread_mutex_t *terminal_lock;            // terminal lock using mutex
-  Windows *windows;                          // displayed windows
-  Tone *tone;                                // handles tone parameters
+  int loop;                        // are the routines looping?
+  int study_phases;                // amount of currently studied phases
+  int windows_force_reload;        // flag to force redraw of the windows
+  int phase_elapsed;               // total time elapsed in the current phase
+  int study_elapsed;               // total time studied in the session
+  int previous_elapsed;            // elapsed loaded from file
+  int time_paused, frozen_elapsed; // flag to pause time
+  ReturnValues *ret;               // return values of threads
+  Phase *current_phase;            // current phase of the timer
+  pthread_mutex_t *terminal_lock;  // terminal lock using mutex
+  Windows *windows;                // displayed windows
+  Tone *tone;                      // handles tone parameters
 } Parameters;
 
 volatile int sigint_called;   // flag for sigint
@@ -99,6 +107,7 @@ void *show_routine(void *args);
 void *advance_routine(void *args);
 void *save_routine(void *args);
 void *keypress_routine(void *args);
+int check_routines(Parameters *p);
 
 int main(int argc, char *argv[]);
 
@@ -606,8 +615,6 @@ Windows *init_windows()
  */
 Parameters *init_parameters(Phase *current_phase)
 {
-  // TODO move phase generation in here
-
   // allocate space for all parameters
   Parameters *p = malloc(sizeof(Parameters));
   // create mutex
@@ -622,6 +629,13 @@ Parameters *init_parameters(Phase *current_phase)
   p->tone->repetitions = 0;
   p->tone->speed = 0;
 
+  // create return values
+  p->ret = malloc(sizeof(*(p->ret))); //? can this be cleaned?
+  p->ret->show_routine = 1;
+  p->ret->advance_routine = 1;
+  p->ret->save_routine = 1;
+  p->ret->keypress_routine = 1;
+
   // init all other parameters
   p->current_phase = current_phase;
   p->study_phases = 0;
@@ -629,10 +643,6 @@ Parameters *init_parameters(Phase *current_phase)
   p->windows_force_reload = 1;
   p->phase_elapsed = 0;
   p->study_elapsed = 0;
-  p->show_r = 1;
-  p->advance_r = 1;
-  p->save_r = 1;
-  p->keypress_r = 1;
   p->previous_elapsed = 0;
   p->time_paused = 1;
   p->frozen_elapsed = 0;
@@ -661,6 +671,9 @@ void delete_parameters(Parameters *p)
 
   // free memory from tone
   free(p->tone);
+
+  // free memory from return values
+  free(p->ret);
 
   // free memory from parameters
   free(p);
@@ -1041,7 +1054,7 @@ void *show_routine(void *args)
     // idle
     ms_sleep(SLEEP_INTERVAL);
   }
-  p->show_r = 0;
+  p->ret->show_routine = 0;
   pthread_exit(0);
 }
 
@@ -1104,7 +1117,7 @@ void *advance_routine(void *args)
 
     ms_sleep(SLEEP_INTERVAL);
   }
-  p->advance_r = 0;
+  p->ret->advance_routine = 0;
   pthread_exit(0);
 }
 
@@ -1130,7 +1143,7 @@ void *save_routine(void *args)
     ms_sleep(SLEEP_INTERVAL);
   }
 
-  p->save_r = 0;
+  p->ret->save_routine = 0;
   pthread_exit(0);
 }
 
@@ -1270,8 +1283,14 @@ void *keypress_routine(void *args)
     ms_sleep(SLEEP_INTERVAL);
   }
 
-  p->keypress_r = 0;
+  p->ret->keypress_routine = 0;
   pthread_exit(0);
+}
+
+int check_routines(Parameters *p)
+{
+  //* this is quite ugly
+  return p->ret->show_routine || p->ret->advance_routine || p->ret->save_routine || p->ret->keypress_routine;
 }
 
 int main(int argc, char *argv[])
@@ -1338,7 +1357,7 @@ int main(int argc, char *argv[])
   start_time(p);
 
   // Main thread IDLE
-  while (p->show_r || p->advance_r || p->save_r || p->keypress_r)
+  while (check_routines(p))
   {
     ms_sleep(SLEEP_INTERVAL);
   }
