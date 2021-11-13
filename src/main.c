@@ -26,6 +26,15 @@ typedef struct phase
   struct phase *next_after; // pointer to phase when the repetitions have ended
 } Phase;
 
+typedef struct panel
+{
+  Window *w_phase;
+  Window *w_total;
+  Window *w_quote;
+  Window *w_controls;
+  Window *w_paused;
+} Windows;
+
 typedef struct
 {
   int repetitions; // number of tones
@@ -34,18 +43,18 @@ typedef struct
 
 typedef struct
 {
-  pthread_mutex_t *terminal_lock;                              // terminal lock using mutex
-  Phase *current_phase;                                        // current phase of the timer
-  Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused; // displayed windows
-  Tone *tone;                                                  // handles tone parameters
-  int loop;                                                    // are the routines looping?
-  int show_r, advance_r, save_r, keypress_r;                   // return values of threads
-  int study_phases;                                            // amount of currently studied phases
-  int windows_force_reload;                                    // flag to force redraw of the windows
-  int phase_elapsed;                                           // total time elapsed in the current phase
-  int study_elapsed;                                           // total time studied in the session
-  int previous_elapsed;                                        // elapsed loaded from file
-  int time_paused, frozen_elapsed;                             // flag to pause time
+  int loop;                                  // are the routines looping?
+  int show_r, advance_r, save_r, keypress_r; // return values of threads
+  int study_phases;                          // amount of currently studied phases
+  int windows_force_reload;                  // flag to force redraw of the windows
+  int phase_elapsed;                         // total time elapsed in the current phase
+  int study_elapsed;                         // total time studied in the session
+  int previous_elapsed;                      // elapsed loaded from file
+  int time_paused, frozen_elapsed;           // flag to pause time
+  Phase *current_phase;                      // current phase of the timer
+  pthread_mutex_t *terminal_lock;            // terminal lock using mutex
+  Windows *windows;                          // displayed windows
+  Tone *tone;                                // handles tone parameters
 } Parameters;
 
 volatile int sigint_called;   // flag for sigint
@@ -69,7 +78,8 @@ void ms_sleep(int ms);
 void s_sleep(int sec);
 
 Phase *init_phases(Phase *phases, int argc, char *argv[]);
-Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused);
+Windows *init_windows();
+Parameters *init_parameters(Phase *current_phase);
 void delete_parameters(Parameters *p);
 Phase *set_initial_phase(Phase *phases);
 void reset_current_time(Parameters *p);
@@ -239,9 +249,6 @@ int load_savefile(Parameters *p, Phase *phases)
 
   return 0;
 }
-
-/* 
-*/
 
 /**
  * @brief Saves stats to file.
@@ -440,7 +447,6 @@ void s_sleep(int s)
   ms_sleep(s * 1000);
 }
 
-/* Assign all the variables needed to run the timer */
 /**
  * @brief Assigns all the variables needed to run the timer.
  * 
@@ -522,6 +528,72 @@ Phase *init_phases(Phase *phases, int argc, char *argv[])
 }
 
 /**
+ * @brief Creates the windows container struct and returns its pointer.
+ * 
+ * @return Windows* 
+ */
+Windows *init_windows()
+{
+  Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused;
+  Windows *w;
+
+  // first, allocate space for the windows struct
+  w = malloc(sizeof(Windows));
+
+  // now create all the windows
+
+  // w_phase keeping track of current phase
+  w_phase = createWindow(0, Y_BORDER);
+  windowSetAlignment(w_phase, 0);
+  windowSetPadding(w_phase, PADDING);
+  windowSetFGcolor(w_phase, fg_RED);
+
+  // w_phase keeping track of total time
+  w_total = createWindow(0, 0);
+  windowSetAlignment(w_total, 0);
+  windowSetPadding(w_total, PADDING);
+  windowSetFGcolor(w_total, fg_BRIGHT_YELLOW);
+
+  // w_quote with... a quote
+  w_quote = createWindow(0, Y_BORDER);
+  windowSetAlignment(w_quote, 0);
+  windowSetPadding(w_quote, PADDING);
+  windowSetAutoWidth(w_quote, 0);
+  windowSetFGcolor(w_quote, fg_BRIGHT_BLUE);
+  windowSetTextStyle(w_quote, text_ITALIC);
+  place_random_quote(w_quote);
+
+  // window with info
+  w_controls = createWindow(0, 0);
+  windowSetAlignment(w_controls, 0);
+  windowSetPadding(w_controls, PADDING);
+  windowSetAutoWidth(w_controls, 0);
+  windowSetFGcolor(w_controls, fg_BRIGHT_GREEN);
+  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, I to hide this window, CTRL+C to exit");
+
+  // window showing is timer is currently paused
+  w_paused = createWindow(0, 0);
+  windowSetAlignment(w_paused, 0);
+  windowSetPadding(w_paused, PADDING);
+  windowSetAutoWidth(w_paused, 0);
+  windowSetAutoHeight(w_paused, 0);
+  windowSetFGcolor(w_paused, fg_BRIGHT_RED);
+  windowSetTextStyle(w_paused, text_BLINKING);
+  windowSetVisibility(w_paused, 0);
+  windowAddLine(w_paused, "WARNING, TIMER IS CURRENTLY PAUSED");
+
+  // assign the windows to the struct
+  w->w_phase = w_phase;
+  w->w_total = w_total;
+  w->w_quote = w_quote;
+  w->w_controls = w_controls;
+  w->w_paused = w_paused;
+
+  // return pointer to window
+  return w;
+}
+
+/**
  * @brief Inits parameters.
  * 
  * @param current_phase 
@@ -532,30 +604,31 @@ Phase *init_phases(Phase *phases, int argc, char *argv[])
  * @param w_paused 
  * @return Parameters* 
  */
-Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_total, Window *w_quote, Window *w_controls, Window *w_paused)
+Parameters *init_parameters(Phase *current_phase)
 {
-  // TODO pack all the windows into a single container
+  // TODO move phase generation in here
 
+  // allocate space for all parameters
   Parameters *p = malloc(sizeof(Parameters));
   // create mutex
   p->terminal_lock = malloc(sizeof(*(p->terminal_lock)));
   pthread_mutex_init(p->terminal_lock, NULL);
+
+  // create windows
+  p->windows = init_windows();
+
   // create tone
-  p->tone = malloc(sizeof(*(p->tone)));
+  p->tone = malloc(sizeof(*(p->tone))); //? can this be cleaned?
   p->tone->repetitions = 0;
   p->tone->speed = 0;
-  // init all parameters
+
+  // init all other parameters
   p->current_phase = current_phase;
   p->study_phases = 0;
   p->study_elapsed = 0;
   p->windows_force_reload = 1;
   p->phase_elapsed = 0;
   p->study_elapsed = 0;
-  p->w_phase = w_phase;
-  p->w_total = w_total;
-  p->w_quote = w_quote;
-  p->w_controls = w_controls;
-  p->w_paused = w_paused;
   p->show_r = 1;
   p->advance_r = 1;
   p->save_r = 1;
@@ -574,10 +647,22 @@ Parameters *init_parameters(Phase *current_phase, Window *w_phase, Window *w_tot
  */
 void delete_parameters(Parameters *p)
 {
-  // free memory and delete parameters
+  // free memory and delete mutex
   pthread_mutex_destroy(p->terminal_lock);
   free(p->terminal_lock);
+
+  // free memory and delete windows
+  deleteWindow(p->windows->w_phase);
+  deleteWindow(p->windows->w_total);
+  deleteWindow(p->windows->w_quote);
+  deleteWindow(p->windows->w_controls);
+  deleteWindow(p->windows->w_paused);
+  free(p->windows);
+
+  // free memory from tone
   free(p->tone);
+
+  // free memory from parameters
   free(p);
 }
 
@@ -799,10 +884,10 @@ int place_random_quote(Window *w)
 void set_windows_visibility(Parameters *p, int visibility)
 {
   clear_terminal();
-  windowSetVisibility(p->w_phase, visibility);
-  windowSetVisibility(p->w_total, visibility);
-  windowSetVisibility(p->w_quote, visibility);
-  windowSetVisibility(p->w_paused, visibility);
+  windowSetVisibility(p->windows->w_phase, visibility);
+  windowSetVisibility(p->windows->w_total, visibility);
+  windowSetVisibility(p->windows->w_quote, visibility);
+  windowSetVisibility(p->windows->w_paused, visibility);
 }
 
 /**
@@ -843,96 +928,96 @@ void *show_routine(void *args)
     char num_buffer[BUFLEN];
 
     // remove old lines
-    windowDeleteAllLines(p->w_phase);
-    windowDeleteAllLines(p->w_total);
+    windowDeleteAllLines(p->windows->w_phase);
+    windowDeleteAllLines(p->windows->w_total);
 
     // first line of phase window
     if (p->current_phase->repetitions > 0)
       sprintf(buffer, "current phase: %s [%i/%i]", p->current_phase->name, p->current_phase->completed + 1, p->current_phase->repetitions);
     else
       sprintf(buffer, "current phase: %s", p->current_phase->name);
-    windowAddLine(p->w_phase, buffer);
+    windowAddLine(p->windows->w_phase, buffer);
 
     // second line of phase window
     sprintf(buffer, "phase duration: %i minutes", p->current_phase->duration);
-    windowAddLine(p->w_phase, buffer);
+    windowAddLine(p->windows->w_phase, buffer);
 
     // format time
     format_elapsed_time(num_buffer, p->phase_elapsed);
     // third line of phase window
     sprintf(buffer, "elapsed time: %s", num_buffer);
-    windowAddLine(p->w_phase, buffer);
+    windowAddLine(p->windows->w_phase, buffer);
 
     // first line of w_total
     sprintf(buffer, "total study sessions: %i", p->study_phases);
-    windowAddLine(p->w_total, buffer);
+    windowAddLine(p->windows->w_total, buffer);
 
     // second line of w_total
     format_elapsed_time(num_buffer, p->study_elapsed);
     sprintf(buffer, "total time studied: %s", num_buffer);
-    windowAddLine(p->w_total, buffer);
+    windowAddLine(p->windows->w_total, buffer);
 
     // third line of w_total
     int time_remaining = p->current_phase->duration - (time(NULL) - p->current_phase->started);
     format_time_delta(num_buffer, time_remaining);
     sprintf(buffer, "phase ending: %s", num_buffer);
-    windowAddLine(p->w_total, buffer);
+    windowAddLine(p->windows->w_total, buffer);
 
     // wait for exclusive use of terminal
     pthread_mutex_lock(p->terminal_lock);
-    windowShow(p->w_phase);
-    windowShow(p->w_total);
+    windowShow(p->windows->w_phase);
+    windowShow(p->windows->w_total);
     // unlock terminal
     pthread_mutex_unlock(p->terminal_lock);
 
     if (p->windows_force_reload)
     {
       // update windows color
-      windowSetFGcolor(p->w_phase, p->current_phase->fg_color);
-      windowSetBGcolor(p->w_phase, p->current_phase->bg_color);
+      windowSetFGcolor(p->windows->w_phase, p->current_phase->fg_color);
+      windowSetBGcolor(p->windows->w_phase, p->current_phase->bg_color);
 
       // get largest window
       int largest, terminal_width, dx;
-      largest = windowGetSize(p->w_phase).width + windowGetSize(p->w_total).width + 1;
+      largest = windowGetSize(p->windows->w_phase).width + windowGetSize(p->windows->w_total).width + 1;
       // now get terminal width
       terminal_width = get_terminal_size().width;
       // now calculate displacement
       dx = (terminal_width - largest) / 2;
 
       // set position of w_phase
-      windowSetPosition(p->w_phase, dx, Y_BORDER);
+      windowSetPosition(p->windows->w_phase, dx, Y_BORDER);
       // set position of w_total
-      windowSetPosition(p->w_total, windowGetBottomRight(p->w_phase).x + 1, Y_BORDER);
-      windowAutoResize(p->w_total); // trigger resize to get the actual width
+      windowSetPosition(p->windows->w_total, windowGetBottomRight(p->windows->w_phase).x + 1, Y_BORDER);
+      windowAutoResize(p->windows->w_total); // trigger resize to get the actual width
 
-      Position total_br_corner = windowGetBottomRight(p->w_total);
+      Position total_br_corner = windowGetBottomRight(p->windows->w_total);
       // set position of w_quote
-      windowSetPosition(p->w_quote, dx, total_br_corner.y);
-      windowSetSize(p->w_quote, total_br_corner.x - dx, 4);
-      windowAutoResize(p->w_quote); // trigger resize to get the actual width
+      windowSetPosition(p->windows->w_quote, dx, total_br_corner.y);
+      windowSetSize(p->windows->w_quote, total_br_corner.x - dx, 4);
+      windowAutoResize(p->windows->w_quote); // trigger resize to get the actual width
 
-      Position quotes_br_corner = windowGetBottomRight(p->w_quote);
+      Position quotes_br_corner = windowGetBottomRight(p->windows->w_quote);
       // set position of w_controls
-      windowSetPosition(p->w_controls, dx, quotes_br_corner.y);
-      windowSetWidth(p->w_controls, total_br_corner.x - dx);
-      windowAutoResize(p->w_controls); // trigger resize to get the actual width
-                                       // set position of w_paused
+      windowSetPosition(p->windows->w_controls, dx, quotes_br_corner.y);
+      windowSetWidth(p->windows->w_controls, total_br_corner.x - dx);
+      windowAutoResize(p->windows->w_controls); // trigger resize to get the actual width
+                                                // set position of w_paused
 
-      if (windowGetVisibility(p->w_controls))
+      if (windowGetVisibility(p->windows->w_controls))
       {
         // since info window is visible, get its position
-        Position info_br_corner = windowGetBottomRight(p->w_controls);
-        windowSetPosition(p->w_paused, dx, info_br_corner.y);
+        Position info_br_corner = windowGetBottomRight(p->windows->w_controls);
+        windowSetPosition(p->windows->w_paused, dx, info_br_corner.y);
       }
       else
       {
         // otherwise, place below quotes
-        windowSetPosition(p->w_paused, dx, quotes_br_corner.y);
+        windowSetPosition(p->windows->w_paused, dx, quotes_br_corner.y);
       }
 
-      windowSetWidth(p->w_paused, quotes_br_corner.x - dx);
-      windowSetHeight(p->w_paused, 3);
-      windowSetVisibility(p->w_paused, p->time_paused);
+      windowSetWidth(p->windows->w_paused, quotes_br_corner.x - dx);
+      windowSetHeight(p->windows->w_paused, 3);
+      windowSetVisibility(p->windows->w_paused, p->time_paused);
 
       // wait for exclusive use of terminal
       pthread_mutex_lock(p->terminal_lock);
@@ -940,11 +1025,11 @@ void *show_routine(void *args)
       clear_terminal();
 
       // display all
-      windowShow(p->w_phase);
-      windowShow(p->w_total);
-      windowShow(p->w_quote);
-      windowShow(p->w_controls);
-      windowShow(p->w_paused);
+      windowShow(p->windows->w_phase);
+      windowShow(p->windows->w_total);
+      windowShow(p->windows->w_quote);
+      windowShow(p->windows->w_controls);
+      windowShow(p->windows->w_paused);
 
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
@@ -1011,7 +1096,7 @@ void *advance_routine(void *args)
         // go to next
         next_phase(p);
         // load a new quote
-        place_random_quote(p->w_quote);
+        place_random_quote(p->windows->w_quote);
         // force windows reload
         p->windows_force_reload = 1;
       }
@@ -1173,12 +1258,12 @@ void *keypress_routine(void *args)
     }
     else if (key == 'q')
     {
-      place_random_quote(p->w_quote);
+      place_random_quote(p->windows->w_quote);
       p->windows_force_reload = 1;
     }
     else if (key == 'i')
     {
-      windowToggleVisibility(p->w_controls);
+      windowToggleVisibility(p->windows->w_controls);
       p->windows_force_reload = 1;
     }
 
@@ -1201,49 +1286,12 @@ int main(int argc, char *argv[])
   pthread_t show_thread, advance_thread, save_thread, keypress_thread;
   Phase phases[3], *current_phase;
   Parameters *p;
-  Window *w_phase, *w_total, *w_quote, *w_controls, *w_paused;
 
   // init phases, provide argv and argc to handle command line parsing
   current_phase = init_phases(phases, argc, argv);
 
-  // w_phase keeping track of current phase
-  w_phase = createWindow(0, Y_BORDER);
-  windowSetAlignment(w_phase, 0);
-  windowSetPadding(w_phase, PADDING);
-  windowSetFGcolor(w_phase, fg_RED);
-  // w_phase keeping track of total time
-  w_total = createWindow(0, 0);
-  windowSetAlignment(w_total, 0);
-  windowSetPadding(w_total, PADDING);
-  windowSetFGcolor(w_total, fg_BRIGHT_YELLOW);
-  // w_quote with... a quote
-  w_quote = createWindow(0, Y_BORDER);
-  windowSetAlignment(w_quote, 0);
-  windowSetPadding(w_quote, PADDING);
-  windowSetAutoWidth(w_quote, 0);
-  windowSetFGcolor(w_quote, fg_BRIGHT_BLUE);
-  windowSetTextStyle(w_quote, text_ITALIC);
-  place_random_quote(w_quote);
-  // window with info
-  w_controls = createWindow(0, 0);
-  windowSetAlignment(w_controls, 0);
-  windowSetPadding(w_controls, PADDING);
-  windowSetAutoWidth(w_controls, 0);
-  windowSetFGcolor(w_controls, fg_BRIGHT_GREEN);
-  windowAddLine(w_controls, "press S to skip, P to pause, Q to get and new quote, I to hide this window, CTRL+C to exit");
-  // window showing is timer is currently paused
-  w_paused = createWindow(0, 0);
-  windowSetAlignment(w_paused, 0);
-  windowSetPadding(w_paused, PADDING);
-  windowSetAutoWidth(w_paused, 0);
-  windowSetAutoHeight(w_paused, 0);
-  windowSetFGcolor(w_paused, fg_BRIGHT_RED);
-  windowSetTextStyle(w_paused, text_BLINKING);
-  windowSetVisibility(w_paused, 0);
-  windowAddLine(w_paused, "WARNING, TIMER IS CURRENTLY PAUSED");
-
   // pack the parameters
-  p = init_parameters(current_phase, w_phase, w_total, w_quote, w_controls, w_paused);
+  p = init_parameters(current_phase);
 
   // prepare terminal
   clear_terminal();
@@ -1297,9 +1345,6 @@ int main(int argc, char *argv[])
 
   // clean up
   delete_parameters(p);
-  deleteWindow(w_phase);
-  deleteWindow(w_total);
-  deleteWindow(w_quote);
 
   // reset all terminal
   exit_raw_mode();
