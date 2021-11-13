@@ -3,7 +3,7 @@
 
 static const int STUDYDURATION = 45;      // duration of the study phase, minutes
 static const int SHORTBREAKDURATION = 15; // duration of the short break, minutes
-static const int LONGBREAKDURATION = 20;  // duration of the long break, minutes
+static const int LONGBREAKDURATION = 30;  // duration of the long break, minutes
 static const int STUDYSESSIONS = 4;       // number of study sessions before long break
 static const int Y_BORDER = 1;            // Y border window positioning
 static const int PADDING = 2;             // window text padding
