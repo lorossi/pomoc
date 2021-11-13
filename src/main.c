@@ -823,7 +823,13 @@ int place_random_quote(Window *w)
   fp = fopen(QUOTES_PATH, "r");
 
   if (fp == NULL)
+  {
+    // if the quotes file is somehow not found,
+    // add a gimmick quote to panel
+    windowAddLine(w, "God is dead and we killed him.");
+    windowAddLine(w, "~Harambe");
     return -1;
+  }
 
   // reset quotes window
   windowDeleteAllLines(w);
