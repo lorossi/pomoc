@@ -185,6 +185,8 @@ int check_savefile()
   if (strcmp(buffer, r_buffer) != 0)
     return -2;
 
+  fclose(fp);
+
   return 1;
 }
 
@@ -255,6 +257,8 @@ int load_savefile(Parameters *p, Phase *phases)
     return -7;
   // update the parameters struct
   p->current_phase->completed = atoi(r_buffer);
+
+  fclose(fp);
 
   return 0;
 }
@@ -334,6 +338,8 @@ int check_settings()
   if (file_count_lines(fp) < 4)
     return -2;
 
+  fclose(fp);
+
   return 0;
 }
 
@@ -364,6 +370,8 @@ int load_settings(int *durations)
     //! ATOI does not check if the value is valid
     *(durations + i) = atoi(r_buffer);
   }
+
+  fclose(fp);
 
   return 0;
 }
@@ -398,6 +406,8 @@ int save_settings(int *durations)
   // save study sessions
   sprintf(w_buffer, "%i\n", *(durations + 3));
   fputs(w_buffer, fp);
+
+  fclose(fp);
 
   return 0;
 }
