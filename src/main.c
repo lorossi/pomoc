@@ -1014,8 +1014,8 @@ void *show_routine(void *args)
       windowSetPosition(p->windows->w_controls, dx, quotes_br_corner.y);
       windowSetWidth(p->windows->w_controls, total_br_corner.x - dx);
       windowAutoResize(p->windows->w_controls); // trigger resize to get the actual width
-                                                // set position of w_paused
 
+      // now set position of w_paused
       if (windowGetVisibility(p->windows->w_controls))
       {
         // since info window is visible, get its position
@@ -1212,6 +1212,7 @@ void *keypress_routine(void *args)
     // unlock terminal
     pthread_mutex_unlock(p->terminal_lock);
 
+    // transform to lower case
     if (key >= 65 && key <= 90)
       key += 32;
 
@@ -1234,6 +1235,8 @@ void *keypress_routine(void *args)
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
+      // pause time so phases does not elapse
+      // while dialog is shown
       pause_time(p);
 
       Dialog *d;
@@ -1261,21 +1264,22 @@ void *keypress_routine(void *args)
       // unlock terminal
       pthread_mutex_unlock(p->terminal_lock);
 
-      // update flags
+      // restart time
       start_time(p);
-
+      // update flags
       p->windows_force_reload = 1;
-
       // reset tone
       p->tone->repetitions = 1;
     }
     else if (key == 'q')
     {
+      // make a new quote
       place_random_quote(p->windows->w_quote);
       p->windows_force_reload = 1;
     }
     else if (key == 'i')
     {
+      // show/hide visibility of commands panel
       windowToggleVisibility(p->windows->w_controls);
       p->windows_force_reload = 1;
     }
@@ -1287,6 +1291,12 @@ void *keypress_routine(void *args)
   pthread_exit(0);
 }
 
+/**
+ * @brief Checks if routine have ended
+ * 
+ * @param p pointer to parameters
+ * @return int 
+ */
 int check_routines(Parameters *p)
 {
   //* this is quite ugly
@@ -1340,6 +1350,7 @@ int main(int argc, char *argv[])
   signal(SIGINT, SIGINT_handler);
   // handle terminal resize
   signal(SIGWINCH, SIGWINCH_handler);
+
   // setup callback flags
   sigint_called = 0;
   sigwinch_called = 0;
