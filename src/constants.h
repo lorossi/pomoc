@@ -13,8 +13,8 @@ static const int BUFLEN = 250;            // length of the buffers
 static const int SAVEINTERVAL = 1000;     // interval between saves, msec
 static const int SLEEP_INTERVAL = 50;     // threads sleep time, msec
 
-#define QUOTES_PATH ".QUOTES"     // file containing the quotes
-#define SAVE_PATH ".SAVE"         // file containing the save for the current sessione
-#define SETTINGS_PATH ".SETTINGS" // file containing settings
+static const char *QUOTES_PATH = ".QUOTES";     // file containing the quotes
+static const char *SAVE_PATH = ".SAVE";         // file containing the save for the current sessione
+static const char *SETTINGS_PATH = ".SETTINGS"; // file containing settings
 
 #endif

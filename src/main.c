@@ -318,8 +318,14 @@ int load_settings(int *durations)
   for (int i = 0; i < 4; i++)
   {
     file_read_line(r_buffer, BUFLEN, fp);
-    //! ATOI does not check if the value is valid
-    *(durations + i) = atoi(r_buffer);
+    int val = atoi(r_buffer);
+    if (val == 0)
+    {
+      // atoi returns 0 if the number is not valid
+      // in that case, return
+      return -3;
+    }
+    *(durations + i) = val;
   }
 
   fclose(fp);
@@ -390,7 +396,6 @@ void SIGWINCH_handler()
  */
 unsigned long long epoch()
 {
-  //! this might not be windows compatible
   struct timeval tv;
 
   gettimeofday(&tv, NULL);
@@ -461,8 +466,14 @@ Phase *init_phases(Phase *phases, int argc, char *argv[])
     {
       for (int i = 1; i < argc && i < 5; i++)
       {
-        //! This does not check if the argument is a valid number
-        durations[i - 1] = atoi(argv[i]);
+        int val = atoi(argv[i]);
+        if (val == 0 || val < 0)
+        {
+          // atoi does not check for validity, but returns 0 for invalid numbers
+          // skip negative values aswell
+          continue;
+        }
+        durations[i - 1] = val;
       }
     }
   }
@@ -1313,16 +1324,16 @@ int main(int argc, char *argv[])
   // declare variables
   pthread_t show_thread, advance_thread, save_thread, keypress_thread;
   Phase phases[3], *current_phase;
+  Windows *windows;
   Parameters *p;
-  Windows *w;
 
   // init phases, provide argv and argc to handle command line parsing
   current_phase = init_phases(phases, argc, argv);
   // init windows
-  w = init_windows();
+  windows = init_windows();
 
   // pack the parameters
-  p = init_parameters(current_phase, w);
+  p = init_parameters(current_phase, windows);
 
   // prepare terminal
   clear_terminal();
