@@ -87,7 +87,7 @@ void s_sleep(int sec);
 
 Phase *init_phases(Phase *phases, int argc, char *argv[]);
 Windows *init_windows();
-Parameters *init_parameters(Phase *current_phase);
+Parameters *init_parameters(Phase *current_phase, Windows *windows);
 void delete_parameters(Parameters *p);
 Phase *set_initial_phase(Phase *phases);
 void reset_current_time(Parameters *p);
@@ -616,14 +616,9 @@ Windows *init_windows()
  * @brief Inits parameters.
  * 
  * @param current_phase 
- * @param w_phase 
- * @param w_total 
- * @param w_quote 
- * @param w_controls 
- * @param w_paused 
  * @return Parameters* 
  */
-Parameters *init_parameters(Phase *current_phase)
+Parameters *init_parameters(Phase *current_phase, Windows *windows)
 {
   // allocate space for all parameters
   Parameters *p = malloc(sizeof(Parameters));
@@ -632,7 +627,7 @@ Parameters *init_parameters(Phase *current_phase)
   pthread_mutex_init(p->terminal_lock, NULL);
 
   // create windows
-  p->windows = init_windows();
+  p->windows = windows;
 
   // create tone
   p->tone = malloc(sizeof(*(p->tone))); //? can this be cleaned?
@@ -947,64 +942,66 @@ void *beep_async(void *args)
  */
 void *show_routine(void *args)
 {
-  // TODO refactor here
-
   Parameters *p = args;
+  time_t last_updated = 0;
 
   while (p->loop)
   {
-    char buffer[BUFLEN];
-    char num_buffer[BUFLEN];
 
-    // remove old lines
-    windowDeleteAllLines(p->windows->w_phase);
-    windowDeleteAllLines(p->windows->w_total);
+    if (time(NULL) - last_updated > 0)
+    {
+      last_updated = time(NULL);
 
-    // first line of phase window
-    if (p->current_phase->repetitions > 0)
-      sprintf(buffer, "current phase: %s [%i/%i]", p->current_phase->name, p->current_phase->completed + 1, p->current_phase->repetitions);
-    else
-      sprintf(buffer, "current phase: %s", p->current_phase->name);
-    windowAddLine(p->windows->w_phase, buffer);
+      char buffer[BUFLEN];
+      char num_buffer[BUFLEN];
 
-    // second line of phase window
-    sprintf(buffer, "phase duration: %i minutes", p->current_phase->duration);
-    windowAddLine(p->windows->w_phase, buffer);
+      // remove old lines
+      windowDeleteAllLines(p->windows->w_phase);
+      windowDeleteAllLines(p->windows->w_total);
 
-    // format time
-    format_elapsed_time(num_buffer, p->phase_elapsed);
-    // third line of phase window
-    sprintf(buffer, "elapsed time: %s", num_buffer);
-    windowAddLine(p->windows->w_phase, buffer);
+      // update windows color
+      windowSetFGcolor(p->windows->w_phase, p->current_phase->fg_color);
 
-    // first line of w_total
-    sprintf(buffer, "total study sessions: %i", p->study_phases);
-    windowAddLine(p->windows->w_total, buffer);
+      // first line of phase window
+      if (p->current_phase->repetitions > 0)
+        sprintf(buffer, "current phase: %s [%i/%i]", p->current_phase->name, p->current_phase->completed + 1, p->current_phase->repetitions);
+      else
+        sprintf(buffer, "current phase: %s", p->current_phase->name);
+      windowAddLine(p->windows->w_phase, buffer);
 
-    // second line of w_total
-    format_elapsed_time(num_buffer, p->study_elapsed);
-    sprintf(buffer, "total time studied: %s", num_buffer);
-    windowAddLine(p->windows->w_total, buffer);
+      // second line of phase window
+      sprintf(buffer, "phase duration: %i minutes", p->current_phase->duration);
+      windowAddLine(p->windows->w_phase, buffer);
 
-    // third line of w_total
-    int time_remaining = p->current_phase->duration - (time(NULL) - p->current_phase->started);
-    format_time_delta(num_buffer, time_remaining);
-    sprintf(buffer, "phase ending: %s", num_buffer);
-    windowAddLine(p->windows->w_total, buffer);
+      // format time
+      format_elapsed_time(num_buffer, p->phase_elapsed);
+      // third line of phase window
+      sprintf(buffer, "elapsed time: %s", num_buffer);
+      windowAddLine(p->windows->w_phase, buffer);
 
-    // wait for exclusive use of terminal
-    pthread_mutex_lock(p->terminal_lock);
-    windowShow(p->windows->w_phase);
-    windowShow(p->windows->w_total);
-    // unlock terminal
-    pthread_mutex_unlock(p->terminal_lock);
+      // first line of w_total
+      sprintf(buffer, "total study sessions: %i", p->study_phases);
+      windowAddLine(p->windows->w_total, buffer);
+
+      // second line of w_total
+      format_elapsed_time(num_buffer, p->study_elapsed);
+      sprintf(buffer, "total time studied: %s", num_buffer);
+      windowAddLine(p->windows->w_total, buffer);
+
+      // third line of w_total
+      int time_remaining = p->current_phase->duration * 60 - (time(NULL) - p->current_phase->started);
+      format_time_delta(num_buffer, time_remaining);
+      sprintf(buffer, "phase ending: %s", num_buffer);
+      windowAddLine(p->windows->w_total, buffer);
+
+      pthread_mutex_lock(p->terminal_lock);
+      windowShow(p->windows->w_phase);
+      windowShow(p->windows->w_total);
+      pthread_mutex_unlock(p->terminal_lock);
+    }
 
     if (p->windows_force_reload)
     {
-      // update windows color
-      windowSetFGcolor(p->windows->w_phase, p->current_phase->fg_color);
-      windowSetBGcolor(p->windows->w_phase, p->current_phase->bg_color);
-
       // get largest window
       int largest, terminal_width, dx;
       largest = windowGetSize(p->windows->w_phase).width + windowGetSize(p->windows->w_total).width + 1;
@@ -1331,12 +1328,15 @@ int main(int argc, char *argv[])
   pthread_t show_thread, advance_thread, save_thread, keypress_thread;
   Phase phases[3], *current_phase;
   Parameters *p;
+  Windows *w;
 
   // init phases, provide argv and argc to handle command line parsing
   current_phase = init_phases(phases, argc, argv);
+  // init windows
+  w = init_windows();
 
   // pack the parameters
-  p = init_parameters(current_phase);
+  p = init_parameters(current_phase, w);
 
   // prepare terminal
   clear_terminal();
