@@ -11,61 +11,9 @@
 
 #include "terminal.h"
 #include "constants.h"
+#include "structures.h"
 
-typedef struct phase
-{
-  char *name;               // name of the phase
-  int id;                   // id of the phase
-  int duration;             // duration of the phase
-  int repetitions;          // number of repetitions of the phase
-  int completed;            // number of time the phase has been completed
-  int is_study;             // is this a phase where I should study?
-  clock_t started;          // when the phase started
-  style fg_color;           // text color of the phase window
-  style bg_color;           // background color of the phase window
-  struct phase *next;       // pointer to next phase
-  struct phase *next_after; // pointer to phase when the repetitions have ended
-} Phase;
-
-typedef struct windows
-{
-  Window *w_phase;    // window showing current phase
-  Window *w_total;    // window showing total time studied
-  Window *w_quote;    // window showing a quote
-  Window *w_controls; // window showing keyboard controls
-  Window *w_paused;   // window telling if the timer is currently paused
-} Windows;
-
-typedef struct
-{
-  int repetitions; // number of tones
-  int speed;       // int in range [0-10]
-} Tone;
-
-typedef struct return_values
-{
-  int show_routine;     // return value from show routine
-  int advance_routine;  // return value from advance routine
-  int save_routine;     // return value from save routine
-  int keypress_routine; // return value from keypress routine
-} ReturnValues;
-
-typedef struct
-{
-  int loop;                        // are the routines looping?
-  int study_phases;                // amount of currently studied phases
-  int windows_force_reload;        // flag to force redraw of the windows
-  int phase_elapsed;               // total time elapsed in the current phase
-  int study_elapsed;               // total time studied in the session
-  int previous_elapsed;            // elapsed loaded from file
-  int time_paused, frozen_elapsed; // flag to pause time
-  ReturnValues *ret;               // return values of threads
-  Phase *current_phase;            // current phase of the timer
-  pthread_mutex_t *terminal_lock;  // terminal lock using mutex
-  Windows *windows;                // displayed windows
-  Tone *tone;                      // handles tone parameters
-} Parameters;
-
+// global variables are bad but there's no other way to pass data from interrupts
 volatile int sigint_called;   // flag for sigint
 volatile int sigwinch_called; // flag for sigwinch
 
@@ -512,7 +460,10 @@ Phase *init_phases(Phase *phases, int argc, char *argv[])
     if (strcmp(argv[1], "reset") != 0)
     {
       for (int i = 1; i < argc && i < 5; i++)
+      {
+        //! This does not check if the argument is a valid number
         durations[i - 1] = atoi(argv[i]);
+      }
     }
   }
   else if (check_settings() == 0)
@@ -645,23 +596,23 @@ Parameters *init_parameters(Phase *current_phase, Windows *windows)
   // allocate space for all parameters
   Parameters *p = malloc(sizeof(Parameters));
   // create mutex
-  p->terminal_lock = malloc(sizeof(*(p->terminal_lock)));
+  p->terminal_lock = malloc(sizeof(pthread_mutex_t));
   pthread_mutex_init(p->terminal_lock, NULL);
 
   // create windows
   p->windows = windows;
 
   // create tone
-  p->tone = malloc(sizeof(*(p->tone))); //? can this be cleaned?
+  p->tone = malloc(sizeof(Tone));
   p->tone->repetitions = 0;
   p->tone->speed = 0;
 
   // create return values
-  p->ret = malloc(sizeof(*(p->ret))); //? can this be cleaned?
-  p->ret->show_routine = 1;
-  p->ret->advance_routine = 1;
-  p->ret->save_routine = 1;
-  p->ret->keypress_routine = 1;
+  p->return_values = malloc(sizeof(ReturnValues));
+  p->return_values->show_routine = 1;
+  p->return_values->advance_routine = 1;
+  p->return_values->save_routine = 1;
+  p->return_values->keypress_routine = 1;
 
   // init all other parameters
   p->current_phase = current_phase;
@@ -700,7 +651,7 @@ void delete_parameters(Parameters *p)
   free(p->tone);
 
   // free memory from return values
-  free(p->ret);
+  free(p->return_values);
 
   // free memory from parameters
   free(p);
@@ -981,7 +932,7 @@ void *show_routine(void *args)
   while (p->loop)
   {
 
-    // update once a second
+    // update 4 times a second
     if (epoch() - last_updated > 250)
     {
       last_updated = epoch();
@@ -1102,7 +1053,7 @@ void *show_routine(void *args)
     // idle
     ms_sleep(SLEEP_INTERVAL);
   }
-  p->ret->show_routine = 0;
+  p->return_values->show_routine = 0;
   pthread_exit(0);
 }
 
@@ -1165,7 +1116,7 @@ void *advance_routine(void *args)
 
     ms_sleep(SLEEP_INTERVAL);
   }
-  p->ret->advance_routine = 0;
+  p->return_values->advance_routine = 0;
   pthread_exit(0);
 }
 
@@ -1191,7 +1142,7 @@ void *save_routine(void *args)
     ms_sleep(SLEEP_INTERVAL);
   }
 
-  p->ret->save_routine = 0;
+  p->return_values->save_routine = 0;
   pthread_exit(0);
 }
 
@@ -1335,7 +1286,7 @@ void *keypress_routine(void *args)
     ms_sleep(SLEEP_INTERVAL);
   }
 
-  p->ret->keypress_routine = 0;
+  p->return_values->keypress_routine = 0;
   pthread_exit(0);
 }
 
@@ -1348,7 +1299,7 @@ void *keypress_routine(void *args)
 int check_routines(Parameters *p)
 {
   //* this is quite ugly
-  return p->ret->show_routine || p->ret->advance_routine || p->ret->save_routine || p->ret->keypress_routine;
+  return p->return_values->show_routine || p->return_values->advance_routine || p->return_values->save_routine || p->return_values->keypress_routine;
 }
 
 int main(int argc, char *argv[])

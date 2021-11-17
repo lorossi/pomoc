@@ -1,6 +1,8 @@
 #ifndef _CONSTANTS
 #define _CONSTANTS
 
+// this file contains all the needed constants
+
 static const int STUDYDURATION = 45;      // duration of the study phase, minutes
 static const int SHORTBREAKDURATION = 15; // duration of the short break, minutes
 static const int LONGBREAKDURATION = 30;  // duration of the long break, minutes
