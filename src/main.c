@@ -96,6 +96,7 @@ void reset_current_time(Parameters *p);
 void start_time(Parameters *p);
 void pause_time(Parameters *p);
 void next_phase(Parameters *p);
+int phase_time_remaining();
 
 void format_elapsed_time(char *buffer, int elapsed);
 void format_date(char *buffer);
@@ -776,6 +777,17 @@ void next_phase(Parameters *p)
 }
 
 /**
+ * @brief Returns remaining time (seconds) in current phase
+ * 
+ * @param p parameters pointer
+ * @return int 
+ */
+int phase_time_remaining(Parameters *p)
+{
+  return p->current_phase->duration * 60 - (time(NULL) - p->current_phase->started);
+}
+
+/**
  * @brief Formats elapsed time.
  * 
  * @param buffer pointer to buffer string
@@ -1011,7 +1023,7 @@ void *show_routine(void *args)
       windowAddLine(p->windows->w_total, buffer);
 
       // third line of w_total
-      int time_remaining = p->current_phase->duration * 60 - (time(NULL) - p->current_phase->started);
+      int time_remaining = phase_time_remaining(p);
       format_time_delta(num_buffer, time_remaining);
       sprintf(buffer, "phase ending: %s", num_buffer);
       windowAddLine(p->windows->w_total, buffer);
