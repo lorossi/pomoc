@@ -1,12 +1,13 @@
 #define _DEFAULT_SOURCE // for nanosleep
 
 #include <stdio.h>
-#include <time.h>    // for timespec
-#include <signal.h>  // for signal()
-#include <unistd.h>  // for nanosleep()
-#include <pthread.h> // for multithread
-#include <string.h>  // for strlen()
-#include <stdlib.h>  // for malloc() and free() and rand()
+#include <sys/time.h> // for gettimeofday
+#include <time.h>     // for timespec
+#include <signal.h>   // for signal()
+#include <unistd.h>   // for nanosleep()
+#include <pthread.h>  // for multithread
+#include <string.h>   // for strlen()
+#include <stdlib.h>   // for malloc() and free() and rand()
 
 #include "terminal.h"
 #include "constants.h"
@@ -82,6 +83,7 @@ int save_settings(int *durations);
 void SIGWINCH_handler();
 void SIGINT_handler();
 
+unsigned long long epoch();
 void ms_sleep(int ms);
 void s_sleep(int sec);
 
@@ -430,6 +432,25 @@ void SIGWINCH_handler()
 {
   sigwinch_called = 1;
   return;
+}
+
+/**
+ * @brief Returns time (milliseconds) since epoch
+ * 
+ * @return unsigned long long 
+ */
+unsigned long long epoch()
+{
+  //! this might not be windows compatible
+  struct timeval tv;
+
+  gettimeofday(&tv, NULL);
+
+  unsigned long long ms_since_epoch =
+      (unsigned long long)(tv.tv_sec) * 1000 +
+      (unsigned long long)(tv.tv_usec) / 1000;
+
+  return ms_since_epoch;
 }
 
 /**
@@ -943,14 +964,15 @@ void *beep_async(void *args)
 void *show_routine(void *args)
 {
   Parameters *p = args;
-  time_t last_updated = 0;
+  unsigned long long last_updated = 0;
 
   while (p->loop)
   {
 
-    if (time(NULL) - last_updated > 0)
+    // update once a second
+    if (epoch() - last_updated > 250)
     {
-      last_updated = time(NULL);
+      last_updated = epoch();
 
       char buffer[BUFLEN];
       char num_buffer[BUFLEN];
@@ -994,6 +1016,7 @@ void *show_routine(void *args)
       sprintf(buffer, "phase ending: %s", num_buffer);
       windowAddLine(p->windows->w_total, buffer);
 
+      // wait for exclusive terminal use
       pthread_mutex_lock(p->terminal_lock);
       windowShow(p->windows->w_phase);
       windowShow(p->windows->w_total);
@@ -1143,14 +1166,14 @@ void *advance_routine(void *args)
 void *save_routine(void *args)
 {
   Parameters *p = args;
-  time_t last_save = 0;
+  unsigned long long last_save = 0;
   while (p->loop)
   {
 
-    if (time(NULL) - last_save > SAVEINTERVAL / 1000)
+    if (epoch() - last_save > SAVEINTERVAL)
     {
       save_savefile(p);
-      last_save = time(NULL);
+      last_save = epoch();
     }
 
     ms_sleep(SLEEP_INTERVAL);

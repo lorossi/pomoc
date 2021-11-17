@@ -14,3 +14,4 @@
 - ~~Add custom values for time (maybe via argv)~~
 - ~~Fix bugs on continue session dialog~~
 - Refactor everything
+- ~~use `gettimeofday` instead of `time` to get better precision~~
