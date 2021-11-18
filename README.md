@@ -6,7 +6,11 @@ That's ironic because it's taking me a lot of time.
 I mean, you have to spend money to make money, but spending time to make time does not sound good.
 I don't even know what to do with my life any more.
 
-Basically I am using my own [library](https://github.com/lorossi/cli-gui) to handle all the windows in the terminal.
+I am using my own [library](https://github.com/lorossi/cli-gui) to handle all the windows in the terminal.
+My will to test it out has fuelled this whole project.
+
+Due to the way this library handles the terminal, this whole project is not compatible with Windows operating system.
+That being said, it should work flawlessly on any UNIX based OS.
 
 More on this project to come.
 

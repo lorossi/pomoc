@@ -13,5 +13,7 @@
 - ~~Replace third line of phase window with end time of current phase~~
 - ~~Add custom values for time (maybe via argv)~~
 - ~~Fix bugs on continue session dialog~~
-- Refactor everything
 - ~~use `gettimeofday` instead of `time` to get better precision~~
+- Parse command line arguments in a smart way in order to display some kind of minimal help
+  - display some minimal help whenever "help" is passed
+- Refactor everything
