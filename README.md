@@ -1,5 +1,7 @@
 # Pomoc
 
+![screenshot](screenshot.png)
+
 While I should be studying, I am developing a little pomodoro timer to help me study.
 
 That's ironic because it's taking me a lot of time.
